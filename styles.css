@@ -550,7 +550,7 @@ tr.high-influence:hover {
     
     /* Property grid - stack vertically on mobile */
     .property-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(3, 1fr) !important;
         gap: 8px;
     }
     
