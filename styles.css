@@ -371,6 +371,23 @@ tr.high-influence:hover {
     color: white;
 }
 
+#weighted-toggle {
+    background-color: #95a5a6 !important;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: all 0.3s;
+}
+
+#weighted-toggle:hover {
+    background-color: #7f8c8d !important;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+    transform: translateY(-1px);
+}
+
 @media (max-width: 768px) {
     .container {
         padding: 15px;

@@ -23,6 +23,7 @@
         <!-- Estimates Section -->
         <div class="estimates-section">
             <h2 style="margin-top: 0; border: none;">Estimated Sale Price</h2>
+            <button id="weighted-toggle" onclick="cycleWeightingMethod()" style="margin-bottom: 15px; background-color: #6c757d;">Simple Average (Click for Price-Weighted)</button>
             <div id="estimates-container"></div>
             
             <h3>Reference Values</h3>
@@ -60,7 +61,6 @@
             <button onclick="deselectAllComps()">Deselect All</button>
             <button onclick="filterRenovated()">Only Renovated</button>
             <button onclick="filterTaxClass1()">Only Tax Class 1</button>
-            <button id="weighted-toggle" onclick="cycleWeightingMethod()" style="margin-left: 20px; background-color: #6c757d;">Simple Average (Click for Price-Weighted)</button>
         </div>
         <div class="comps-table-wrapper">
             <table id="comps-table">

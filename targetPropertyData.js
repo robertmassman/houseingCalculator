@@ -1,5 +1,5 @@
 // Target Property to Compare Data
-export const targetProperty = {
+/*export const targetProperty = {
     address: "1220 Dean Street Brooklyn, NY 11216",
     renovated: "Yes",
     propertyWidthFeet: 16.67,
@@ -21,4 +21,24 @@ export const targetProperty = {
         developerPrice: 3250000.00,
         fairMarketValue: 2500000.00
     }
+};*/
+
+export const targetProperty = {
+    address: "882 Park Pl, Brooklyn, NY 11216",
+    renovated: "No",
+    propertyWidthFeet: 18.00,
+    propertyDepthFeet: 135.58,
+    floors: 4,
+    buildingWidthFeet: 18.00,
+    buildingDepthFeet: 47.00,
+    buildingStories: 3,
+    estimatedSale: 0.00,
+    priceOnACRIS: 0.00,
+    sellDate: "N/A",
+    block: 1241,
+    lot: 26,
+    occupancy: "B1 - TWO FAMILY BRICK",
+    taxClass: "1",
+    taxes: 4789.68,
+    coordinates: { lat: 40.673169, lng: -73.948462 },
 };
