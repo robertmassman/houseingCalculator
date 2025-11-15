@@ -537,10 +537,35 @@ tr.high-influence:hover {
         margin-top: 20px;
     }
     
+    /* Target Property - more compact on mobile */
+    .target-property {
+        padding: 12px;
+        margin-bottom: 15px;
+    }
+    
+    .target-property h3 {
+        font-size: 15px;
+        margin-bottom: 8px;
+    }
+    
     /* Property grid - stack vertically on mobile */
     .property-grid {
         grid-template-columns: 1fr;
-        gap: 12px;
+        gap: 8px;
+    }
+    
+    .property-field {
+        padding: 8px;
+    }
+    
+    .property-field label {
+        font-size: 12px;
+        margin-bottom: 2px;
+    }
+    
+    .property-field .static-value {
+        font-size: 14px;
+        font-weight: 600;
     }
     
     /* Estimates section - stack vertically */
@@ -568,26 +593,28 @@ tr.high-influence:hover {
     
     /* Map controls - wrap and stack */
     .map-controls {
-        flex-wrap: wrap;
-        gap: 8px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
     }
     
     .map-control-btn {
-        flex: 1 1 auto;
-        min-width: 100px;
+        flex: none;
+        width: 100%;
         font-size: 14px;
     }
     
     #heatmap-metric {
         width: 100%;
         margin-left: 0 !important;
-        margin-top: 8px;
+        margin-top: 0;
     }
     
     .map-controls label {
         width: 100%;
         margin-left: 0 !important;
-        margin-top: 8px;
+        margin-top: 0;
+        justify-content: flex-start;
     }
     
     /* Table - make scrollable horizontally */
