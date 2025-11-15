@@ -16,6 +16,9 @@
         <!-- Target Property Section -->
         <h2>Target Property</h2>
         <div class="target-property">
+            <select id="target-property-select" onchange="changeTargetProperty()" style="margin-bottom: 15px; padding: 8px 12px; border-radius: 6px; border: 1px solid #3498db; background: white; color: #2c3e50; font-size: 14px; cursor: pointer;">
+                <option value="0">Select a property...</option>
+            </select>
             <h3 id="target-address">Loading...</h3>
             <div class="property-grid" id="target-property-fields"></div>
         </div>

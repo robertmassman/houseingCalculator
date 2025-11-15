@@ -116,11 +116,37 @@ function loadData() {
             return processed;
         });
         
-        // Process target property
-        targetProperty = processImportedProperty(importedTarget);
-        targetProperty.estimatedSale = importedTarget.estimatedSale || 0;
-        targetProperty.developerPrice = importedTarget.referenceValues?.developerPrice || 0;
-        targetProperty.fairMarketValue = importedTarget.referenceValues?.fairMarketValue || 0;
+        // Check if importedTarget is an array or single object
+        if (Array.isArray(importedTarget)) {
+            // Populate dropdown with target properties
+            const dropdown = document.getElementById('target-property-select');
+            dropdown.innerHTML = '<option value="">Select a property...</option>';
+            importedTarget.forEach((prop, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = prop.address;
+                dropdown.appendChild(option);
+            });
+            
+            // Set first property as default
+            if (importedTarget.length > 0) {
+                dropdown.value = 0;
+                targetProperty = processImportedProperty(importedTarget[0]);
+                targetProperty.estimatedSale = importedTarget[0].estimatedSale || 0;
+                targetProperty.developerPrice = importedTarget[0].referenceValues?.developerPrice || 0;
+                targetProperty.fairMarketValue = importedTarget[0].referenceValues?.fairMarketValue || 0;
+            }
+        } else {
+            // Single target property (backward compatibility)
+            targetProperty = processImportedProperty(importedTarget);
+            targetProperty.estimatedSale = importedTarget.estimatedSale || 0;
+            targetProperty.developerPrice = importedTarget.referenceValues?.developerPrice || 0;
+            targetProperty.fairMarketValue = importedTarget.referenceValues?.fairMarketValue || 0;
+            
+            // Hide dropdown if only one property
+            const dropdown = document.getElementById('target-property-select');
+            if (dropdown) dropdown.style.display = 'none';
+        }
         
         // Render everything
         renderTargetProperty();
@@ -621,6 +647,31 @@ function calculateAndRenderEstimates() {
     
     calculateAndRenderAverages();
 }
+
+// Change target property based on dropdown selection
+function changeTargetProperty() {
+    const dropdown = document.getElementById('target-property-select');
+    const selectedIndex = parseInt(dropdown.value);
+    
+    if (isNaN(selectedIndex) || !Array.isArray(importedTarget)) return;
+    
+    const selectedProperty = importedTarget[selectedIndex];
+    if (!selectedProperty) return;
+    
+    // Process the selected property
+    targetProperty = processImportedProperty(selectedProperty);
+    targetProperty.estimatedSale = selectedProperty.estimatedSale || 0;
+    targetProperty.developerPrice = selectedProperty.referenceValues?.developerPrice || 0;
+    targetProperty.fairMarketValue = selectedProperty.referenceValues?.fairMarketValue || 0;
+    
+    // Re-render everything
+    renderTargetProperty();
+    calculateAndRenderEstimates();
+    updateMap();
+}
+
+// Expose to global scope
+window.changeTargetProperty = changeTargetProperty;
 
 // Quick filter functions
 function selectAllComps() {
