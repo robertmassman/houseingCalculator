@@ -382,6 +382,47 @@ tr.high-influence:hover {
     transition: all 0.3s;
 }
 
+/* Weighting method buttons */
+.weighting-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.weight-btn {
+    padding: 10px 16px;
+    border: none;
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    opacity: 0.6;
+    transform: scale(0.98);
+}
+
+.weight-btn:hover {
+    opacity: 0.85;
+    transform: scale(1);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.weight-btn.active {
+    opacity: 1;
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    position: relative;
+}
+
+.weight-btn.active::after {
+    content: '✓';
+    margin-left: 6px;
+    font-size: 14px;
+}
+
 #weighted-toggle:hover {
     background-color: #7f8c8d !important;
     box-shadow: 0 3px 6px rgba(0,0,0,0.15);
@@ -588,6 +629,17 @@ tr.high-influence:hover {
     /* Estimates section - stack vertically */
     .estimates-section {
         grid-template-columns: 1fr;
+    }
+    
+    /* Weighting buttons - smaller on mobile */
+    .weight-btn {
+        padding: 8px 12px;
+        font-size: 11px;
+    }
+    
+    .weight-btn.active::after {
+        margin-left: 4px;
+        font-size: 12px;
     }
     
     .estimate-box, .reference-box, .average-box {

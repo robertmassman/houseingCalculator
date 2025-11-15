@@ -26,7 +26,16 @@
         <!-- Estimates Section -->
         <div class="estimates-section">
             <h2 style="margin-top: 0; border: none;">Estimated Sale Price</h2>
-            <button id="weighted-toggle" onclick="cycleWeightingMethod()" style="margin-bottom: 15px; background-color: #6c757d;">Simple Average (Click for Price-Weighted)</button>
+            <div class="weighting-buttons" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 8px;">
+                <button class="weight-btn active" data-method="simple" onclick="setWeightingMethod('simple')" style="background-color: #6c757d;">Simple Average</button>
+                <button class="weight-btn" data-method="price" onclick="setWeightingMethod('price')" style="background-color: #28a745;">Price-Weighted</button>
+                <button class="weight-btn" data-method="size" onclick="setWeightingMethod('size')" style="background-color: #3498db;">Building Size</button>
+                <button class="weight-btn" data-method="total-size" onclick="setWeightingMethod('total-size')" style="background-color: #9b59b6;">Total Property Size</button>
+                <button class="weight-btn" data-method="date" onclick="setWeightingMethod('date')" style="background-color: #e67e22;">Date-Weighted</button>
+                <button class="weight-btn" data-method="renovated" onclick="setWeightingMethod('renovated')" style="background-color: #e91e63;">Renovated</button>
+                <button class="weight-btn" data-method="combined" onclick="setWeightingMethod('combined')" style="background-color: #8e44ad;">Combined (Reno+Details)</button>
+                <button class="weight-btn" data-method="all-weighted" onclick="setWeightingMethod('all-weighted')" style="background-color: #16a085;">All-Weighted Blend</button>
+            </div>
             <div id="estimates-container"></div>
             
             <h3>Reference Values</h3>

@@ -3,6 +3,7 @@ export const comparableProperties = [
     {
         address: "104 Brooklyn Ave, Brooklyn, NY 11216",
         renovated: "Yes",
+        originalDetails: "Partial",
         propertyWidthFeet: 16,
         propertyDepthFeet: 72.5,
         floors: 4,
@@ -22,6 +23,7 @@ export const comparableProperties = [
     {
         address: "843 Prospect Pl, Brooklyn, NY 11216",
         renovated: "Yes",
+        originalDetails: "Partial",
         propertyWidthFeet: 18.75,
         propertyDepthFeet: 91,
         floors: 4,
@@ -41,6 +43,7 @@ export const comparableProperties = [
     {
         address: "674 Saint Marks Ave, Brooklyn, NY 11216",
         renovated: "Yes",
+        originalDetails: "Yes",
         propertyWidthFeet: 20,
         propertyDepthFeet: 125.29,
         floors: 4,
@@ -60,6 +63,7 @@ export const comparableProperties = [
     {
         address: "1323 Dean St, Brooklyn, NY 11216",
         renovated: "Yes",
+        originalDetails: "Yes",
         propertyWidthFeet: 20,
         propertyDepthFeet: 107.21,
         floors: 4,
@@ -79,6 +83,7 @@ export const comparableProperties = [
     {
         address: "854 Prospect Place, Brooklyn, NY 11216",
         renovated: "N/A",
+        originalDetails: "N/A",
         propertyWidthFeet: 20,
         propertyDepthFeet: 140.58,
         floors: 4,
@@ -98,6 +103,7 @@ export const comparableProperties = [
     {
         address: "845 Prospect Place, Brooklyn, NY 11216",
         renovated: "Yes",
+        originalDetails: "Yes",
         propertyWidthFeet: 18.75,
         propertyDepthFeet: 91,
         floors: 4,
@@ -117,6 +123,7 @@ export const comparableProperties = [
     {
         address: "1113 Bergen St, Brooklyn, NY 11216",
         renovated: "Yes",
+        originalDetails: "Partial",
         propertyWidthFeet: 20,
         propertyDepthFeet: 100,
         floors: 3,
@@ -136,6 +143,7 @@ export const comparableProperties = [
     {
         address: "1219 Dean St, Brooklyn, NY 11216",
         renovated: "Yes",
+        originalDetails: "Yes",
         propertyWidthFeet: 20,
         propertyDepthFeet: 100,
         floors: 4,

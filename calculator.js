@@ -270,6 +270,61 @@ function renderComparables() {
     });
     const totalDateWeight = dateWeights.reduce((sum, w) => sum + w, 0);
     
+    // Calculate renovated-based weights (renovated properties get higher weight)
+    const renovatedWeights = included.map(p => {
+        // Give renovated properties 3x weight compared to non-renovated
+        return p.renovated === 'Yes' ? 3.0 : 1.0;
+    });
+    const totalRenovatedWeight = renovatedWeights.reduce((sum, w) => sum + w, 0);
+    
+    // Calculate combined weights (renovated + originalDetails matching)
+    const combinedWeights = included.map(p => {
+        let weight = 1.0;
+        // Match renovation status (3x multiplier if matches target)
+        if (targetProperty.renovated === p.renovated) {
+            weight *= 3.0;
+        }
+        // Match original details status (2x multiplier if matches target)
+        if (targetProperty.originalDetails === p.originalDetails) {
+            weight *= 2.0;
+        }
+        return weight;
+    });
+    const totalCombinedWeight = combinedWeights.reduce((sum, w) => sum + w, 0);
+    
+    // Calculate all-weighted blend (combines all weighting factors)
+    const allWeights = included.map((p, index) => {
+        let weight = 1.0;
+        
+        // Price component (normalized 0-1)
+        if (totalPrice > 0) {
+            weight *= (p.salePrice / totalPrice) * included.length;
+        }
+        
+        // Size similarity component
+        if (totalSizeWeight > 0 && sizeWeights[index]) {
+            weight *= (sizeWeights[index] / totalSizeWeight) * included.length;
+        }
+        
+        // Date recency component
+        if (totalDateWeight > 0 && dateWeights[index]) {
+            weight *= (dateWeights[index] / totalDateWeight) * included.length;
+        }
+        
+        // Renovated match component
+        if (p.renovated === targetProperty.renovated) {
+            weight *= 1.5;
+        }
+        
+        // Original details match component
+        if (p.originalDetails === targetProperty.originalDetails) {
+            weight *= 1.3;
+        }
+        
+        return weight;
+    });
+    const totalAllWeight = allWeights.reduce((sum, w) => sum + w, 0);
+    
     comparableProperties.forEach(prop => {
         const row = document.createElement('tr');
         row.id = `comp-${prop.id}`;
@@ -293,6 +348,21 @@ function renderComparables() {
                 const propIndex = included.findIndex(p => p.id === prop.id);
                 if (propIndex >= 0) {
                     weightPercent = (dateWeights[propIndex] / totalDateWeight) * 100;
+                }
+            } else if (weightingMethod === 'renovated' && totalRenovatedWeight > 0) {
+                const propIndex = included.findIndex(p => p.id === prop.id);
+                if (propIndex >= 0) {
+                    weightPercent = (renovatedWeights[propIndex] / totalRenovatedWeight) * 100;
+                }
+            } else if (weightingMethod === 'combined' && totalCombinedWeight > 0) {
+                const propIndex = included.findIndex(p => p.id === prop.id);
+                if (propIndex >= 0) {
+                    weightPercent = (combinedWeights[propIndex] / totalCombinedWeight) * 100;
+                }
+            } else if (weightingMethod === 'all-weighted' && totalAllWeight > 0) {
+                const propIndex = included.findIndex(p => p.id === prop.id);
+                if (propIndex >= 0) {
+                    weightPercent = (allWeights[propIndex] / totalAllWeight) * 100;
                 }
             }
         }
@@ -379,6 +449,18 @@ function toggleDirectComp(id) {
 window.toggleComp = toggleComp;
 window.toggleDirectComp = toggleDirectComp;
 
+// Weighting method labels map (shared between functions)
+const avgTypeMap = {
+    'simple': 'Simple Average',
+    'price': 'Price-Weighted Average',
+    'size': 'Building Size-Weighted Average',
+    'total-size': 'Total Property Size-Weighted Average',
+    'date': 'Date-Weighted Average (Recent Sales)',
+    'renovated': 'Renovated-Weighted Average',
+    'combined': 'Combined (Renovated + Original Details) Weighted Average',
+    'all-weighted': 'All-Weighted Blend (All Factors Combined)'
+};
+
 // Calculate and render market averages
 function calculateAndRenderAverages() {
     const included = comparableProperties.filter(p => p.included && p.salePrice > 0);
@@ -434,6 +516,63 @@ function calculateAndRenderAverages() {
             const totalWeight = weights.reduce((sum, w) => sum + w, 0);
             avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
             avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+        } else if (weightingMethod === 'renovated') {
+            // Renovated-based weighted average (renovated properties weighted higher)
+            const weights = included.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+        } else if (weightingMethod === 'combined') {
+            // Combined weighted average (renovated + originalDetails matching)
+            const weights = included.map(p => {
+                let weight = 1.0;
+                if (targetProperty.renovated === p.renovated) weight *= 3.0;
+                if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
+                return weight;
+            });
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+        } else if (weightingMethod === 'all-weighted') {
+            // All-weighted blend (combines all factors)
+            const totalPrice = included.reduce((sum, p) => sum + p.salePrice, 0);
+            const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
+            
+            const weights = included.map(p => {
+                let weight = 1.0;
+                
+                // Price factor
+                if (totalPrice > 0) weight *= (p.salePrice / totalPrice) * included.length;
+                
+                // Size similarity factor
+                const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
+                const sizeDiff = Math.abs(compSize - targetSize);
+                const sizeWeight = 1 / (1 + sizeDiff / targetSize);
+                weight *= sizeWeight * included.length;
+                
+                // Date recency factor
+                if (p.sellDate !== 'N/A' && p.sellDate) {
+                    const dateParts = p.sellDate.split('/');
+                    if (dateParts.length === 3) {
+                        let year = parseInt(dateParts[2]);
+                        if (year < 100) year += year < 50 ? 2000 : 1900;
+                        const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+                        const today = new Date();
+                        const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+                        const dateWeight = Math.exp(-daysSinceSale / 525);
+                        weight *= dateWeight * included.length;
+                    }
+                }
+                
+                // Qualitative matches
+                if (p.renovated === targetProperty.renovated) weight *= 1.5;
+                if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
+                
+                return weight;
+            });
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
         } else {
             // Simple average
             avgBuildingPriceSQFT = included.reduce((sum, p) => sum + p.buildingPriceSQFT, 0) / included.length;
@@ -458,13 +597,6 @@ function calculateAndRenderAverages() {
     }
     
     const container = document.getElementById('market-averages');
-    const avgTypeMap = {
-        'simple': 'Simple Average',
-        'price': 'Price-Weighted Average',
-        'size': 'Building Size-Weighted Average',
-        'total-size': 'Total Property Size-Weighted Average',
-        'date': 'Date-Weighted Average (Recent Sales)'
-    };
     const avgType = avgTypeMap[weightingMethod];
     container.innerHTML = `
         <div class="average-box">
@@ -555,6 +687,103 @@ function calculateAndRenderEstimates() {
             const totalWeight = weights.reduce((sum, w) => sum + w, 0);
             avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
             avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+        } else if (weightingMethod === 'renovated') {
+            // Renovated-based weighted average (renovated properties weighted higher)
+            const weights = included.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+        } else if (weightingMethod === 'combined') {
+            // Combined weighted average (renovated + originalDetails matching)
+            const weights = included.map(p => {
+                let weight = 1.0;
+                if (targetProperty.renovated === p.renovated) weight *= 3.0;
+                if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
+                return weight;
+            });
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+        } else if (weightingMethod === 'all-weighted') {
+            // All-weighted blend (combines all factors)
+            const totalPrice = included.reduce((sum, p) => sum + p.salePrice, 0);
+            const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
+            
+            const weights = included.map(p => {
+                let weight = 1.0;
+                
+                // Price factor
+                if (totalPrice > 0) weight *= (p.salePrice / totalPrice) * included.length;
+                
+                // Size similarity factor
+                const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
+                const sizeDiff = Math.abs(compSize - targetSize);
+                const sizeWeight = 1 / (1 + sizeDiff / targetSize);
+                weight *= sizeWeight * included.length;
+                
+                // Date recency factor
+                if (p.sellDate !== 'N/A' && p.sellDate) {
+                    const dateParts = p.sellDate.split('/');
+                    if (dateParts.length === 3) {
+                        let year = parseInt(dateParts[2]);
+                        if (year < 100) year += year < 50 ? 2000 : 1900;
+                        const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+                        const today = new Date();
+                        const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+                        const dateWeight = Math.exp(-daysSinceSale / 525);
+                        weight *= dateWeight * included.length;
+                    }
+                }
+                
+                // Qualitative matches
+                if (p.renovated === targetProperty.renovated) weight *= 1.5;
+                if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
+                
+                return weight;
+            });
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+        } else if (weightingMethod === 'all-weighted') {
+            // All-weighted blend (combines all factors)
+            const totalPrice = included.reduce((sum, p) => sum + p.salePrice, 0);
+            const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
+            
+            const weights = included.map(p => {
+                let weight = 1.0;
+                
+                // Price factor
+                if (totalPrice > 0) weight *= (p.salePrice / totalPrice) * included.length;
+                
+                // Size similarity factor
+                const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
+                const sizeDiff = Math.abs(compSize - targetSize);
+                const sizeWeight = 1 / (1 + sizeDiff / targetSize);
+                weight *= sizeWeight * included.length;
+                
+                // Date recency factor
+                if (p.sellDate !== 'N/A' && p.sellDate) {
+                    const dateParts = p.sellDate.split('/');
+                    if (dateParts.length === 3) {
+                        let year = parseInt(dateParts[2]);
+                        if (year < 100) year += year < 50 ? 2000 : 1900;
+                        const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+                        const today = new Date();
+                        const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+                        const dateWeight = Math.exp(-daysSinceSale / 525);
+                        weight *= dateWeight * included.length;
+                    }
+                }
+                
+                // Qualitative matches
+                if (p.renovated === targetProperty.renovated) weight *= 1.5;
+                if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
+                
+                return weight;
+            });
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
         } else {
             // Simple average
             avgBuildingPriceSQFT = included.reduce((sum, p) => sum + p.buildingPriceSQFT, 0) / included.length;
@@ -610,23 +839,148 @@ function calculateAndRenderEstimates() {
     const directCompValue = directCompProp ? directCompProp.salePrice : 0;
     const directCompAddress = directCompProp ? directCompProp.address : 'None selected';
     
-    // Calculate estimate based on direct comp's Building $ SQFT
-    // Formula: Direct Comp's Building $ SQFT × (Target's Floors × (Target's Building width × Target's Building depth))
-    let directCompEstimate = 0;
+    // Calculate estimate based on direct comp's Building $ SQFT (using weighted averages when applicable)
+    let directCompBuildingPriceSQFT = 0;
+    let directCompTotalPriceSQFT = 0;
+    
     if (directCompProp) {
-        directCompEstimate = directCompProp.buildingPriceSQFT * targetBuildingSQFTWithFloors;
+        // If using weighted methods, calculate weighted average that gives high weight to direct comp
+        if (weightingMethod !== 'simple') {
+            const includedWithDirectComp = comparableProperties.filter(p => p.included && p.salePrice > 0);
+            
+            if (weightingMethod === 'price') {
+                const totalPrice = includedWithDirectComp.reduce((sum, p) => sum + p.salePrice, 0);
+                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p) => 
+                    sum + (p.buildingPriceSQFT * p.salePrice), 0) / totalPrice;
+                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p) => 
+                    sum + (p.totalPriceSQFT * p.salePrice), 0) / totalPrice;
+            } else if (weightingMethod === 'size') {
+                const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
+                const weights = includedWithDirectComp.map(p => {
+                    const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
+                    const sizeDiff = Math.abs(compSize - targetSize);
+                    return 1 / (1 + sizeDiff / targetSize);
+                });
+                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+            } else if (weightingMethod === 'total-size') {
+                const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
+                const weights = includedWithDirectComp.map(p => {
+                    const compTotalSize = p.propertySQFT + p.buildingSQFT;
+                    const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
+                    return 1 / (1 + totalSizeDiff / targetTotalSize);
+                });
+                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+            } else if (weightingMethod === 'date') {
+                const weights = includedWithDirectComp.map(p => {
+                    if (p.sellDate === 'N/A' || !p.sellDate) return 0.1;
+                    const dateParts = p.sellDate.split('/');
+                    if (dateParts.length !== 3) return 0.1;
+                    let year = parseInt(dateParts[2]);
+                    if (year < 100) year += year < 50 ? 2000 : 1900;
+                    const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+                    const today = new Date();
+                    const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+                    return Math.exp(-daysSinceSale / 525);
+                });
+                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+            } else if (weightingMethod === 'renovated') {
+                const weights = includedWithDirectComp.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
+                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+            } else if (weightingMethod === 'combined') {
+                const weights = includedWithDirectComp.map(p => {
+                    let weight = 1.0;
+                    if (targetProperty.renovated === p.renovated) weight *= 3.0;
+                    if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
+                    return weight;
+                });
+                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+            } else if (weightingMethod === 'all-weighted') {
+                const totalPrice = includedWithDirectComp.reduce((sum, p) => sum + p.salePrice, 0);
+                const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
+                const weights = includedWithDirectComp.map(p => {
+                    let weight = 1.0;
+                    if (totalPrice > 0) weight *= (p.salePrice / totalPrice) * includedWithDirectComp.length;
+                    const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
+                    const sizeDiff = Math.abs(compSize - targetSize);
+                    const sizeWeight = 1 / (1 + sizeDiff / targetSize);
+                    const totalSizeWeight = includedWithDirectComp.map(comp => {
+                        const cSize = comp.floors * (comp.buildingWidthFeet * comp.buildingDepthFeet);
+                        const cDiff = Math.abs(cSize - targetSize);
+                        return 1 / (1 + cDiff / targetSize);
+                    }).reduce((sum, w) => sum + w, 0);
+                    if (totalSizeWeight > 0) weight *= (sizeWeight / totalSizeWeight) * includedWithDirectComp.length;
+                    if (p.sellDate !== 'N/A' && p.sellDate) {
+                        const dateParts = p.sellDate.split('/');
+                        if (dateParts.length === 3) {
+                            let year = parseInt(dateParts[2]);
+                            if (year < 100) year += year < 50 ? 2000 : 1900;
+                            const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+                            const today = new Date();
+                            const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+                            const dateWeight = Math.exp(-daysSinceSale / 525);
+                            const totalDateWeight = includedWithDirectComp.map(comp => {
+                                if (comp.sellDate === 'N/A' || !comp.sellDate) return 0.1;
+                                const dParts = comp.sellDate.split('/');
+                                if (dParts.length !== 3) return 0.1;
+                                let y = parseInt(dParts[2]);
+                                if (y < 100) y += y < 50 ? 2000 : 1900;
+                                const sd = new Date(y, parseInt(dParts[0]) - 1, parseInt(dParts[1]));
+                                const td = new Date();
+                                const dss = (td - sd) / (1000 * 60 * 60 * 24);
+                                return Math.exp(-dss / 525);
+                            }).reduce((sum, w) => sum + w, 0);
+                            if (totalDateWeight > 0) weight *= (dateWeight / totalDateWeight) * includedWithDirectComp.length;
+                        }
+                    }
+                    if (p.renovated === targetProperty.renovated) weight *= 1.5;
+                    if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
+                    return weight;
+                });
+                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
+                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+            }
+        } else {
+            // Simple average - just use direct comp's values
+            directCompBuildingPriceSQFT = directCompProp.buildingPriceSQFT;
+            directCompTotalPriceSQFT = directCompProp.totalPriceSQFT;
+        }
     }
     
-    // Calculate estimate based on direct comp's Total $ SQFT
-    // Formula: Direct Comp's Total $ SQFT × (Target's Property SQFT + Target's Building SQFT)
+    // Calculate estimates using the weighted $ SQFT values
+    let directCompEstimate = 0;
     let directCompTotalEstimate = 0;
     if (directCompProp) {
+        directCompEstimate = directCompBuildingPriceSQFT * targetBuildingSQFTWithFloors;
         const targetTotalSQFT = targetProperty.propertySQFT + targetProperty.buildingSQFT;
-        directCompTotalEstimate = directCompProp.totalPriceSQFT * targetTotalSQFT;
+        directCompTotalEstimate = directCompTotalPriceSQFT * targetTotalSQFT;
     }
     
     // Reference values
     const refContainer = document.getElementById('reference-values');
+    const weightingLabel = weightingMethod === 'simple' ? '' : ' (' + avgTypeMap[weightingMethod] + ')';
     refContainer.innerHTML = `
         <div class="reference-box">
             <h4>Direct Comp Sale Price</h4>
@@ -634,14 +988,14 @@ function calculateAndRenderEstimates() {
             <div class="average-count" style="margin-top: 5px;">${directCompAddress}</div>
         </div>
         <div class="reference-box">
-            <h4>Direct Comp Building-Based</h4>
+            <h4>Direct Comp Building-Based${weightingLabel}</h4>
             <div class="reference-value">${formatCurrency(directCompEstimate)}</div>
-            <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompProp.buildingPriceSQFT) + ' × (' + targetProperty.floors + ' floors × ' + formatNumber(targetProperty.buildingWidthFeet, 2) + ' × ' + formatNumber(targetProperty.buildingDepthFeet, 2) + ')' : 'No comp selected'}</div>
+            <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompBuildingPriceSQFT) + ' × (' + targetProperty.floors + ' floors × ' + formatNumber(targetProperty.buildingWidthFeet, 2) + ' × ' + formatNumber(targetProperty.buildingDepthFeet, 2) + ')' : 'No comp selected'}</div>
         </div>
         <div class="reference-box">
-            <h4>Direct Comp Total-Based</h4>
+            <h4>Direct Comp Total-Based${weightingLabel}</h4>
             <div class="reference-value">${formatCurrency(directCompTotalEstimate)}</div>
-            <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompProp.totalPriceSQFT) + ' × (' + formatNumber(targetProperty.propertySQFT, 2) + ' + ' + formatNumber(targetProperty.buildingSQFT, 2) + ')' : 'No comp selected'}</div>
+            <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompTotalPriceSQFT) + ' × (' + formatNumber(targetProperty.propertySQFT, 2) + ' + ' + formatNumber(targetProperty.buildingSQFT, 2) + ')' : 'No comp selected'}</div>
         </div>
     `;
     
@@ -706,34 +1060,31 @@ function filterTaxClass1() {
     updateMap();
 }
 
-// Cycle through weighting methods
-function cycleWeightingMethod() {
-    const methods = ['simple', 'price', 'size', 'total-size', 'date'];
-    const currentIndex = methods.indexOf(weightingMethod);
-    weightingMethod = methods[(currentIndex + 1) % methods.length];
+// Set weighting method directly
+function setWeightingMethod(method) {
+    weightingMethod = method;
     
-    const button = document.getElementById('weighted-toggle');
-    const buttonStates = {
-        'simple': { bg: '#6c757d', text: 'Simple Average (Click for Price-Weighted)' },
-        'price': { bg: '#28a745', text: 'Price-Weighted ✓ (Click for Building Size)' },
-        'size': { bg: '#3498db', text: 'Building Size ✓ (Click for Total Size)' },
-        'total-size': { bg: '#9b59b6', text: 'Total Property Size ✓ (Click for Date)' },
-        'date': { bg: '#e67e22', text: 'Date-Weighted ✓ (Click for Simple)' }
-    };
-    
-    button.style.backgroundColor = buttonStates[weightingMethod].bg;
-    button.textContent = buttonStates[weightingMethod].text;
+    // Update button states
+    document.querySelectorAll('.weight-btn').forEach(btn => {
+        if (btn.dataset.method === method) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
     
     renderComparables();
     calculateAndRenderEstimates();
 }
+
+// Expose to global scope
+window.setWeightingMethod = setWeightingMethod;
 
 // Expose filter functions to global scope
 window.selectAllComps = selectAllComps;
 window.deselectAllComps = deselectAllComps;
 window.filterRenovated = filterRenovated;
 window.filterTaxClass1 = filterTaxClass1;
-window.cycleWeightingMethod = cycleWeightingMethod;
 
 // ============================================
 // MAP FUNCTIONALITY
