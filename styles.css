@@ -550,7 +550,7 @@ tr.high-influence:hover {
     
     /* Property grid - stack vertically on mobile */
     .property-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(3, 1fr);
         gap: 8px;
     }
     
@@ -559,12 +559,12 @@ tr.high-influence:hover {
     }
     
     .property-field label {
-        font-size: 12px;
+        font-size: 11px;
         margin-bottom: 2px;
     }
     
     .property-field .static-value {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 600;
     }
     
