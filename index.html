@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crown Heights Property Estimator</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.css" />
+</head>
+<body>
+    <div class="container">
+        <h1>Crown Heights Property Estimator</h1>
+        <p style="color: #666; margin-bottom: 20px;">Dynamic property valuation calculator with comparable analysis</p>
+
+        <!-- Target Property Section -->
+        <h2>Target Property</h2>
+        <div class="target-property">
+            <h3 id="target-address">Loading...</h3>
+            <div class="property-grid" id="target-property-fields"></div>
+        </div>
+
+        <!-- Estimates Section -->
+        <div class="estimates-section">
+            <h2 style="margin-top: 0; border: none;">Estimated Sale Price</h2>
+            <div id="estimates-container"></div>
+            
+            <h3>Reference Values</h3>
+            <div class="reference-values" id="reference-values"></div>
+        </div>
+
+        <!-- Market Averages -->
+        <h2>Market Averages</h2>
+        <div class="market-averages" id="market-averages"></div>
+
+        <!-- Map View -->
+        <h2>Map View</h2>
+        <div class="map-container">
+            <div class="map-controls">
+                <button id="map-markers-btn" class="map-control-btn active" onclick="showMapMarkers()">Markers</button>
+                <button id="map-heatmap-btn" class="map-control-btn" onclick="showMapHeatmap()">Heat Map</button>
+                <select id="heatmap-metric" onchange="updateHeatmap()" style="margin-left: 10px;">
+                    <option value="buildingPriceSQFT">Building $ SQFT</option>
+                    <option value="totalPriceSQFT">Total $ SQFT</option>
+                    <option value="salePrice">Sale Price</option>
+                </select>
+                <label style="margin-left: 20px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" id="amenities-overlay" onchange="toggleAmenitiesOverlay()" style="cursor: pointer;">
+                    <span>Show Amenities Overlay</span>
+                </label>
+            </div>
+            <div id="map" style="height: 400px; width: 100%; border-radius: 8px;"></div>
+            <div id="map-status" style="margin-top: 10px; color: #666; font-size: 14px;"></div>
+        </div>
+
+        <!-- Comparable Properties -->
+        <h2>Comparable Properties</h2>
+        <div class="quick-filters">
+            <button onclick="selectAllComps()">Select All</button>
+            <button onclick="deselectAllComps()">Deselect All</button>
+            <button onclick="filterRenovated()">Only Renovated</button>
+            <button onclick="filterTaxClass1()">Only Tax Class 1</button>
+            <button id="weighted-toggle" onclick="cycleWeightingMethod()" style="margin-left: 20px; background-color: #6c757d;">Simple Average (Click for Price-Weighted)</button>
+        </div>
+        <div class="comps-table-wrapper">
+            <table id="comps-table">
+                <thead>
+                    <tr>
+                        <th class="checkbox-cell">Include</th>
+                        <th class="checkbox-cell">Direct<br>Comp</th>
+                        <th>Address</th>
+                        <th>Renovated</th>
+                        <th>Property SQFT</th>
+                        <th>Building SQFT</th>
+                        <th>Building $ SQFT</th>
+                        <th>Total $ SQFT</th>
+                        <th>Sale Price</th>
+                        <th id="weight-header">Weight %</th>
+                        <th>Sale Date</th>
+                        <th>Tax Class</th>
+                        <th>Occupancy</th>
+                    </tr>
+                </thead>
+                <tbody id="comps-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <footer style="text-align: center; padding: 30px 20px; color: #999; font-size: 13px; border-top: 1px solid #e0e0e0; margin-top: 40px;">
+        <p>Built with assistance from <strong>GitHub Copilot</strong> (Claude Sonnet 4.5)</p>
+    </footer>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    <script type="module" src="calculator.js"></script>
+</body>
+</html>
