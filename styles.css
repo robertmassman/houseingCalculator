@@ -581,6 +581,29 @@ tr.high-influence:hover {
         font-size: 22px;
     }
     
+    .estimate-formula, .average-count {
+        font-size: 11px;
+    }
+    
+    /* Confidence interval and stats - keep on one line */
+    .ci-row, .stat-row {
+        font-size: 11px;
+        gap: 8px;
+        flex-wrap: nowrap;
+    }
+    
+    .ci-label, .stat-label {
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    
+    .ci-value, .stat-value {
+        font-size: 11px;
+        text-align: right;
+        word-break: keep-all;
+        white-space: nowrap;
+    }
+    
     /* Reference values - stack vertically */
     .reference-values {
         grid-template-columns: 1fr;
