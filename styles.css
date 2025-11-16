@@ -123,6 +123,11 @@ h3 {
     border-left-color: #27ae60;
 }
 
+.estimate-box.high-influence-estimate {
+    border-left-color: #9b59b6;
+    background: #f9f5fb;
+}
+
 .estimate-box h4 {
     color: #555;
     font-size: 14px;

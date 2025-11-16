@@ -12,6 +12,8 @@
     <div class="container">
         <h1>Crown Heights Property Estimator</h1>
         <p style="color: #666; margin-bottom: 20px;">Dynamic property valuation calculator with comparable analysis</p>
+        
+        
 
         <!-- Target Property Section -->
         <h2>Target Property</h2>
@@ -26,8 +28,20 @@
         <!-- Estimates Section -->
         <div class="estimates-section">
             <h2 style="margin-top: 0; border: none;">Estimated Sale Price</h2>
+            
+            <!-- Appreciation Rate Control -->
+            <div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #3498db;">
+                <label style="display: flex; align-items: center; gap: 10px; font-weight: 500; color: #2c3e50;">
+                    <span style="min-width: 180px;">Annual Appreciation Rate:</span>
+                    <input type="number" id="appreciation-rate" value="5.0" min="0" max="20" step="0.5" 
+                           onchange="setAppreciationRate(this.value)" 
+                           style="width: 80px; padding: 6px 10px; border: 1px solid #bdc3c7; border-radius: 4px; font-size: 14px;">
+                    <span style="font-size: 14px; color: #7f8c8d;">% (adjusts older comp sales to today's value)</span>
+                </label>
+            </div>
+            
             <div class="weighting-buttons" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 8px;">
-                <button class="weight-btn active" data-method="simple" onclick="setWeightingMethod('simple')" style="background-color: #6c757d;">Simple Average</button>
+                <button class="weight-btn" data-method="simple" onclick="setWeightingMethod('simple')" style="background-color: #6c757d;">Simple Average</button>
                 <button class="weight-btn" data-method="price" onclick="setWeightingMethod('price')" style="background-color: #28a745;">Price-Weighted</button>
                 <button class="weight-btn" data-method="size" onclick="setWeightingMethod('size')" style="background-color: #3498db;">Building Size</button>
                 <button class="weight-btn" data-method="total-size" onclick="setWeightingMethod('total-size')" style="background-color: #9b59b6;">Total Property Size</button>
@@ -50,17 +64,9 @@
         <h2>Map View</h2>
         <div class="map-container">
             <div class="map-controls">
-                <button id="map-markers-btn" class="map-control-btn active" onclick="showMapMarkers()">Markers</button>
-                <button id="map-heatmap-btn" class="map-control-btn" onclick="showMapHeatmap()">Heat Map</button>
-                <select id="heatmap-metric" onchange="updateHeatmap()" style="margin-left: 10px;">
-                    <option value="buildingPriceSQFT">Building $ SQFT</option>
-                    <option value="totalPriceSQFT">Total $ SQFT</option>
-                    <option value="salePrice">Sale Price</option>
-                </select>
-                <label style="margin-left: 20px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" id="amenities-overlay" onchange="toggleAmenitiesOverlay()" style="cursor: pointer;">
-                    <span>Show Amenities Overlay</span>
-                </label>
+                <button id="map-heatmap-btn" class="map-control-btn" onclick="showMapHeatmap()">Influence</button>
+                <button id="map-value-zones-btn" class="map-control-btn" onclick="showMapValueZones()">Value Zones</button>
+                <button id="map-amenities-btn" class="map-control-btn" onclick="toggleAmenitiesOverlay()">Amenities</button>
             </div>
             <div id="map" style="height: 400px; width: 100%; border-radius: 8px;"></div>
             <div id="map-status" style="margin-top: 10px; color: #666; font-size: 14px;"></div>
@@ -82,6 +88,7 @@
                         <th class="checkbox-cell">Direct<br>Comp</th>
                         <th>Address</th>
                         <th>Renovated</th>
+                        <th>Original Details</th>
                         <th>Property SQFT</th>
                         <th>Building SQFT</th>
                         <th>Building $ SQFT</th>
@@ -96,6 +103,48 @@
                 <tbody id="comps-tbody"></tbody>
             </table>
         </div>
+        
+        <!-- Bottom Disclaimer -->
+        <div class="disclaimer" style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 40px 0 20px 0; border-top: 3px solid #95a5a6;">
+            <h3 style="margin: 0 0 10px 0; color: #34495e; font-size: 16px;">Professional Standards & Limitations</h3>
+            <div style="color: #5a6a7a; font-size: 13px; line-height: 1.7;">
+                <p style="margin: 0 0 12px 0;"><strong>Data Sources & Accuracy:</strong> Comparable sales data is compiled from public records and may contain errors, omissions, or outdated information. Sale dates, prices, and property characteristics should be independently verified.</p>
+                
+                <p style="margin: 0 0 12px 0;"><strong>Statistical Methodology:</strong> This calculator uses weighted averaging and standard deviation analysis. Confidence intervals represent statistical probability ranges, not guaranteed value ranges. Market conditions can cause actual values to fall outside these ranges.</p>
+                
+                <p style="margin: 0 0 12px 0;"><strong>Adjustment Factors:</strong> Appreciation rates and renovation premiums are user-configurable estimates. Actual market appreciation and renovation values vary by property, neighborhood, and market cycle. These settings should be based on local market research.</p>
+                
+                <p style="margin: 0 0 12px 0;"><strong>What This Tool CANNOT Do:</strong> This calculator does not account for: property-specific condition issues, legal encumbrances, zoning restrictions, environmental hazards, market momentum, buyer financing terms, or negotiation factors. It does not replace on-site inspection or professional appraisal.</p>
+                
+                <p style="margin: 0 0 12px 0;"><strong>Professional Guidance Required For:</strong> Purchase/sale decisions, mortgage financing, legal disputes, estate planning, tax assessment challenges, investment analysis, or any situation requiring a legally defensible valuation.</p>
+                
+                <p style="margin: 0; font-weight: 500; color: #34495e;"><strong>This tool is for preliminary research and educational purposes only.</strong> The creators assume no liability for decisions made based on these estimates. Always engage licensed professionals for real estate transactions.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Professional Disclaimer -->
+    <div class="disclaimer"
+        style="background: #fff3cd; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #f0ad4e;">
+        <strong style="color: #8a6d3b;">⚠️ IMPORTANT VALUATION DISCLAIMER:</strong>
+        <p style="margin: 10px 0 0 0; color: #6c5d3b; font-size: 14px; line-height: 1.6;">
+            This calculator provides <strong>preliminary estimates only</strong> based on comparable sales data. These
+            estimates are <strong>NOT</strong> professional appraisals and should not be used as the sole basis for
+            purchase, sale, or financing decisions. Actual market value may vary significantly based on:
+        </p>
+        <ul style="margin: 8px 0 8px 20px; color: #6c5d3b; font-size: 13px; line-height: 1.6;">
+            <li><strong>Property condition:</strong> Interior/exterior condition, recent improvements, deferred maintenance
+            </li>
+            <li><strong>Market conditions:</strong> Current demand, seasonal factors, economic trends</li>
+            <li><strong>Unique features:</strong> Views, location advantages, lot characteristics not captured in comps</li>
+            <li><strong>Comparables quality:</strong> Limited data, age of sales, differences in property characteristics
+            </li>
+            <li><strong>Timing factors:</strong> Days on market, motivated sellers/buyers, competitive offers</li>
+        </ul>
+        <p style="margin: 8px 0 0 0; color: #6c5d3b; font-size: 13px; font-weight: 500;">
+            <strong>For official valuations, financing, legal matters, or investment decisions, always consult a licensed
+                real estate appraiser, broker, or attorney.</strong>
+        </p>
     </div>
 
     <footer style="text-align: center; padding: 30px 20px; color: #999; font-size: 13px; border-top: 1px solid #e0e0e0; margin-top: 40px;">

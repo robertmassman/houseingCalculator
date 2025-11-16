@@ -4,14 +4,15 @@ import { targetProperty as importedTarget } from './targetPropertyData.js';
 // Global data storage
 let targetProperty = null;
 let comparableProperties = [];
-let weightingMethod = 'simple'; // 'simple', 'price', 'size', 'total-size', or 'date'
+let weightingMethod = 'all-weighted'; // 'simple', 'price', 'size', 'total-size', 'date', 'renovated', 'combined', 'all-weighted'
+let annualAppreciationRate = 0.05; // 5% annual appreciation (adjustable)
 
 // Map-related globals
 let map = null;
 let markersLayer = null;
 let heatmapLayer = null;
 let amenitiesOverlayLayer = null;
-let mapMode = 'markers'; // 'markers' or 'heatmap'
+let mapMode = 'none'; // 'none', 'heatmap', or 'value-zones' (markers always shown)
 let geocodingInProgress = false;
 let showAmenitiesOverlay = false;
 
@@ -84,6 +85,35 @@ function calculateTotalPriceSQFT(price, propertySQFT, buildingSQFT) {
     return price / total;
 }
 
+// Apply time-based appreciation adjustment to a sale price
+function applyAppreciationAdjustment(salePrice, sellDate) {
+    if (!sellDate || sellDate === 'N/A' || !salePrice || salePrice === 0) {
+        return { adjustedPrice: salePrice, yearsAgo: 0, appreciationAmount: 0 };
+    }
+    
+    // Parse date (format: MM/DD/YYYY or MM/DD/YY)
+    const dateParts = sellDate.split('/');
+    if (dateParts.length !== 3) {
+        return { adjustedPrice: salePrice, yearsAgo: 0, appreciationAmount: 0 };
+    }
+    
+    let year = parseInt(dateParts[2]);
+    // Handle 2-digit years: 00-49 = 2000-2049, 50-99 = 1950-1999
+    if (year < 100) {
+        year += year < 50 ? 2000 : 1900;
+    }
+    
+    const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+    const today = new Date();
+    const yearsAgo = (today - saleDate) / (1000 * 60 * 60 * 24 * 365.25);
+    
+    // Apply compound appreciation: adjustedPrice = salePrice × (1 + rate)^years
+    const adjustedPrice = salePrice * Math.pow(1 + annualAppreciationRate, yearsAgo);
+    const appreciationAmount = adjustedPrice - salePrice;
+    
+    return { adjustedPrice, yearsAgo, appreciationAmount };
+}
+
 // Process imported property data with calculations
 function processImportedProperty(prop) {
     const processed = { ...prop };
@@ -95,10 +125,21 @@ function processImportedProperty(prop) {
     // Use sale price for comps
     if (prop.priceOnACRIS !== undefined) {
         processed.salePrice = prop.priceOnACRIS;
+        processed.originalSalePrice = prop.priceOnACRIS; // Store original for reference
         
-        // Recalculate price per SQFT
-        processed.buildingPriceSQFT = calculateBuildingPriceSQFT(processed.salePrice, prop.buildingWidthFeet, prop.buildingDepthFeet, prop.floors);
-        processed.totalPriceSQFT = calculateTotalPriceSQFT(processed.salePrice, processed.propertySQFT, processed.buildingSQFT);
+        // Apply time-based appreciation adjustment
+        const adjustment = applyAppreciationAdjustment(processed.salePrice, prop.sellDate);
+        processed.adjustedSalePrice = adjustment.adjustedPrice;
+        processed.appreciationYears = adjustment.yearsAgo;
+        processed.appreciationAmount = adjustment.appreciationAmount;
+        
+        // Recalculate price per SQFT using adjusted price
+        processed.buildingPriceSQFT = calculateBuildingPriceSQFT(processed.adjustedSalePrice, prop.buildingWidthFeet, prop.buildingDepthFeet, prop.floors);
+        processed.totalPriceSQFT = calculateTotalPriceSQFT(processed.adjustedSalePrice, processed.propertySQFT, processed.buildingSQFT);
+        
+        // Also store original price per SQFT for comparison
+        processed.originalBuildingPriceSQFT = calculateBuildingPriceSQFT(processed.salePrice, prop.buildingWidthFeet, prop.buildingDepthFeet, prop.floors);
+        processed.originalTotalPriceSQFT = calculateTotalPriceSQFT(processed.salePrice, processed.propertySQFT, processed.buildingSQFT);
     }
     
     return processed;
@@ -147,6 +188,15 @@ function loadData() {
             const dropdown = document.getElementById('target-property-select');
             if (dropdown) dropdown.style.display = 'none';
         }
+        
+        // Initialize button states to match default weightingMethod
+        document.querySelectorAll('.weight-btn').forEach(btn => {
+            if (btn.dataset.method === weightingMethod) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
         
         // Render everything
         renderTargetProperty();
@@ -226,8 +276,8 @@ function renderComparables() {
     }
     
     // Calculate weights for all included properties
-    const included = comparableProperties.filter(p => p.included && p.salePrice > 0);
-    const totalPrice = included.reduce((sum, p) => sum + p.salePrice, 0);
+    const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
+    const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
     const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
     
     // Calculate size-based weights for all included properties
@@ -298,7 +348,7 @@ function renderComparables() {
         
         // Price component (normalized 0-1)
         if (totalPrice > 0) {
-            weight *= (p.salePrice / totalPrice) * included.length;
+            weight *= (p.adjustedSalePrice / totalPrice) * included.length;
         }
         
         // Size similarity component
@@ -333,7 +383,7 @@ function renderComparables() {
         let weightPercent = 0;
         if (prop.included) {
             if (weightingMethod === 'price' && totalPrice > 0) {
-                weightPercent = (prop.salePrice / totalPrice) * 100;
+                weightPercent = (prop.adjustedSalePrice / totalPrice) * 100;
             } else if (weightingMethod === 'size' && totalSizeWeight > 0) {
                 const propIndex = included.findIndex(p => p.id === prop.id);
                 if (propIndex >= 0) {
@@ -399,11 +449,15 @@ function renderComparables() {
                         ${weightingMethod !== 'simple' && prop.included && isHighInfluence ? '<span class="badge badge-high-influence">High Influence</span>' : ''}
                     </td>
                     <td>${prop.renovated}</td>
+                    <td>${prop.originalDetails || 'N/A'}</td>
                     <td>${formatNumber(prop.propertySQFT, 2)}</td>
                     <td>${formatNumber(prop.buildingSQFT, 2)}</td>
                     <td>${formatCurrency(prop.buildingPriceSQFT)}</td>
                     <td>${formatCurrency(prop.totalPriceSQFT)}</td>
-                    <td>${formatCurrency(prop.salePrice)}</td>
+                    <td>
+                        ${formatCurrency(prop.adjustedSalePrice)}
+                        ${prop.appreciationAmount > 1000 ? '<br><span style="font-size: 11px; color: #27ae60;">+' + formatCurrency(prop.appreciationAmount) + ' adj.</span>' : ''}
+                    </td>
                     ${weightCell}
                     <td>${prop.sellDate}</td>
                     <td>${prop.taxClass}</td>
@@ -463,7 +517,7 @@ const avgTypeMap = {
 
 // Calculate and render market averages
 function calculateAndRenderAverages() {
-    const included = comparableProperties.filter(p => p.included && p.salePrice > 0);
+    const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
     
     let avgBuildingPriceSQFT = 0;
     let avgTotalPriceSQFT = 0;
@@ -481,9 +535,9 @@ function calculateAndRenderAverages() {
         
         if (weightingMethod === 'price') {
             // Price-weighted average
-            const totalPrice = included.reduce((sum, p) => sum + p.salePrice, 0);
-            avgBuildingPriceSQFT = included.reduce((sum, p) => sum + (p.buildingPriceSQFT * p.salePrice), 0) / totalPrice;
-            avgTotalPriceSQFT = included.reduce((sum, p) => sum + (p.totalPriceSQFT * p.salePrice), 0) / totalPrice;
+            const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
+            avgBuildingPriceSQFT = included.reduce((sum, p) => sum + (p.buildingPriceSQFT * p.adjustedSalePrice), 0) / totalPrice;
+            avgTotalPriceSQFT = included.reduce((sum, p) => sum + (p.totalPriceSQFT * p.adjustedSalePrice), 0) / totalPrice;
         } else if (weightingMethod === 'size') {
             // Size-similarity weighted average
             const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
@@ -535,14 +589,14 @@ function calculateAndRenderAverages() {
             avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
         } else if (weightingMethod === 'all-weighted') {
             // All-weighted blend (combines all factors)
-            const totalPrice = included.reduce((sum, p) => sum + p.salePrice, 0);
+            const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
             const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
             
             const weights = included.map(p => {
                 let weight = 1.0;
                 
                 // Price factor
-                if (totalPrice > 0) weight *= (p.salePrice / totalPrice) * included.length;
+                if (totalPrice > 0) weight *= (p.adjustedSalePrice / totalPrice) * included.length;
                 
                 // Size similarity factor
                 const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
@@ -622,9 +676,34 @@ function calculateAndRenderAverages() {
     `;
 }
 
+// Change appreciation rate
+function setAppreciationRate(rate) {
+    annualAppreciationRate = rate / 100; // Convert percentage to decimal
+    
+    // Reprocess all properties with new rate
+    comparableProperties.forEach(prop => {
+        if (prop.originalSalePrice) {
+            const adjustment = applyAppreciationAdjustment(prop.originalSalePrice, prop.sellDate);
+            prop.adjustedSalePrice = adjustment.adjustedPrice;
+            prop.appreciationAmount = adjustment.appreciationAmount;
+            
+            // Recalculate price per SQFT
+            prop.buildingPriceSQFT = calculateBuildingPriceSQFT(prop.adjustedSalePrice, prop.buildingWidthFeet, prop.buildingDepthFeet, prop.floors);
+            prop.totalPriceSQFT = calculateTotalPriceSQFT(prop.adjustedSalePrice, prop.propertySQFT, prop.buildingSQFT);
+        }
+    });
+    
+    // Update display
+    renderComparables();
+    calculateAndRenderEstimates();
+}
+
+// Expose to global scope
+window.setAppreciationRate = setAppreciationRate;
+
 // Calculate and render estimates
 function calculateAndRenderEstimates() {
-    const included = comparableProperties.filter(p => p.included && p.salePrice > 0);
+    const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
     
     let avgBuildingPriceSQFT = 0;
     let avgTotalPriceSQFT = 0;
@@ -641,9 +720,9 @@ function calculateAndRenderEstimates() {
         
         if (weightingMethod === 'price') {
             // Price-weighted average
-            const totalPrice = included.reduce((sum, p) => sum + p.salePrice, 0);
-            avgBuildingPriceSQFT = included.reduce((sum, p) => sum + (p.buildingPriceSQFT * p.salePrice), 0) / totalPrice;
-            avgTotalPriceSQFT = included.reduce((sum, p) => sum + (p.totalPriceSQFT * p.salePrice), 0) / totalPrice;
+            const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
+            avgBuildingPriceSQFT = included.reduce((sum, p) => sum + (p.buildingPriceSQFT * p.adjustedSalePrice), 0) / totalPrice;
+            avgTotalPriceSQFT = included.reduce((sum, p) => sum + (p.totalPriceSQFT * p.adjustedSalePrice), 0) / totalPrice;
         } else if (weightingMethod === 'size') {
             // Size-similarity weighted average
             const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
@@ -706,54 +785,14 @@ function calculateAndRenderEstimates() {
             avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
         } else if (weightingMethod === 'all-weighted') {
             // All-weighted blend (combines all factors)
-            const totalPrice = included.reduce((sum, p) => sum + p.salePrice, 0);
+            const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
             const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
             
             const weights = included.map(p => {
                 let weight = 1.0;
                 
                 // Price factor
-                if (totalPrice > 0) weight *= (p.salePrice / totalPrice) * included.length;
-                
-                // Size similarity factor
-                const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
-                const sizeDiff = Math.abs(compSize - targetSize);
-                const sizeWeight = 1 / (1 + sizeDiff / targetSize);
-                weight *= sizeWeight * included.length;
-                
-                // Date recency factor
-                if (p.sellDate !== 'N/A' && p.sellDate) {
-                    const dateParts = p.sellDate.split('/');
-                    if (dateParts.length === 3) {
-                        let year = parseInt(dateParts[2]);
-                        if (year < 100) year += year < 50 ? 2000 : 1900;
-                        const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-                        const today = new Date();
-                        const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
-                        const dateWeight = Math.exp(-daysSinceSale / 525);
-                        weight *= dateWeight * included.length;
-                    }
-                }
-                
-                // Qualitative matches
-                if (p.renovated === targetProperty.renovated) weight *= 1.5;
-                if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
-                
-                return weight;
-            });
-            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
-            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
-        } else if (weightingMethod === 'all-weighted') {
-            // All-weighted blend (combines all factors)
-            const totalPrice = included.reduce((sum, p) => sum + p.salePrice, 0);
-            const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
-            
-            const weights = included.map(p => {
-                let weight = 1.0;
-                
-                // Price factor
-                if (totalPrice > 0) weight *= (p.salePrice / totalPrice) * included.length;
+                if (totalPrice > 0) weight *= (p.adjustedSalePrice / totalPrice) * included.length;
                 
                 // Size similarity factor
                 const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
@@ -803,176 +842,310 @@ function calculateAndRenderEstimates() {
     // Method A: Building SQFT (with Floors) × Average Building $ SQFT (PRIMARY)
     const estimateA = targetBuildingSQFTWithFloors * avgBuildingPriceSQFT;
     const estimateAMedian = targetBuildingSQFTWithFloors * medianBuildingPriceSQFT;
-    const estimateALow = targetBuildingSQFTWithFloors * (avgBuildingPriceSQFT - stdDevBuildingPriceSQFT);
-    const estimateAHigh = targetBuildingSQFTWithFloors * (avgBuildingPriceSQFT + stdDevBuildingPriceSQFT);
+    // 68% Confidence Interval (±1 std dev)
+    const estimateALow68 = targetBuildingSQFTWithFloors * (avgBuildingPriceSQFT - stdDevBuildingPriceSQFT);
+    const estimateAHigh68 = targetBuildingSQFTWithFloors * (avgBuildingPriceSQFT + stdDevBuildingPriceSQFT);
+    // 95% Confidence Interval (±2 std dev)
+    const estimateALow95 = targetBuildingSQFTWithFloors * (avgBuildingPriceSQFT - (2 * stdDevBuildingPriceSQFT));
+    const estimateAHigh95 = targetBuildingSQFTWithFloors * (avgBuildingPriceSQFT + (2 * stdDevBuildingPriceSQFT));
     
     // Method B: (Property SQFT + Building SQFT) × Average Total $ SQFT
     const estimateB = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * avgTotalPriceSQFT;
     const estimateBMedian = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * medianTotalPriceSQFT;
-    const estimateBLow = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT - stdDevTotalPriceSQFT);
-    const estimateBHigh = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT + stdDevTotalPriceSQFT);
+    // 68% Confidence Interval (±1 std dev)
+    const estimateBLow68 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT - stdDevTotalPriceSQFT);
+    const estimateBHigh68 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT + stdDevTotalPriceSQFT);
+    // 95% Confidence Interval (±2 std dev)
+    const estimateBLow95 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT - (2 * stdDevTotalPriceSQFT));
+    const estimateBHigh95 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT + (2 * stdDevTotalPriceSQFT));
+    
+    // Blended Estimate: 60% Method A + 40% Method B
+    const blendedEstimate = (estimateA * 0.6) + (estimateB * 0.4);
+    const blendedMedian = (estimateAMedian * 0.6) + (estimateBMedian * 0.4);
+    const blendedLow68 = (estimateALow68 * 0.6) + (estimateBLow68 * 0.4);
+    const blendedHigh68 = (estimateAHigh68 * 0.6) + (estimateBHigh68 * 0.4);
+    const blendedLow95 = (estimateALow95 * 0.6) + (estimateBLow95 * 0.4);
+    const blendedHigh95 = (estimateAHigh95 * 0.6) + (estimateBHigh95 * 0.4);
+    
+    // Calculate High Influence Properties Estimate (only if weighted method and high influence props exist)
+    let highInfluenceEstimateHTML = '';
+    if (weightingMethod !== 'simple' && included.length > 0) {
+        // Recalculate weights to identify high influence properties
+        const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
+        const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
+        const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
+        
+        // Calculate all weight arrays
+        const sizeWeights = included.map(p => {
+            const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
+            const sizeDiff = Math.abs(compSize - targetSize);
+            return 1 / (1 + sizeDiff / targetSize);
+        });
+        const totalSizeWeight = sizeWeights.reduce((sum, w) => sum + w, 0);
+        
+        const totalSizeWeights = included.map(p => {
+            const compTotalSize = p.propertySQFT + p.buildingSQFT;
+            const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
+            return 1 / (1 + totalSizeDiff / targetTotalSize);
+        });
+        const totalPropertySizeWeight = totalSizeWeights.reduce((sum, w) => sum + w, 0);
+        
+        const dateWeights = included.map(p => {
+            if (p.sellDate === 'N/A' || !p.sellDate) return 0.1;
+            const dateParts = p.sellDate.split('/');
+            if (dateParts.length !== 3) return 0.1;
+            let year = parseInt(dateParts[2]);
+            if (year < 100) year += year < 50 ? 2000 : 1900;
+            const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+            const today = new Date();
+            const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+            return Math.exp(-daysSinceSale / 525);
+        });
+        const totalDateWeight = dateWeights.reduce((sum, w) => sum + w, 0);
+        
+        const renovatedWeights = included.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
+        const totalRenovatedWeight = renovatedWeights.reduce((sum, w) => sum + w, 0);
+        
+        const combinedWeights = included.map(p => {
+            let weight = 1.0;
+            if (targetProperty.renovated === p.renovated) weight *= 3.0;
+            if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
+            return weight;
+        });
+        const totalCombinedWeight = combinedWeights.reduce((sum, w) => sum + w, 0);
+        
+        const allWeights = included.map((p, index) => {
+            let weight = 1.0;
+            if (totalPrice > 0) weight *= (p.adjustedSalePrice / totalPrice) * included.length;
+            if (totalSizeWeight > 0 && sizeWeights[index]) weight *= (sizeWeights[index] / totalSizeWeight) * included.length;
+            if (totalDateWeight > 0 && dateWeights[index]) weight *= (dateWeights[index] / totalDateWeight) * included.length;
+            if (p.renovated === targetProperty.renovated) weight *= 1.5;
+            if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
+            return weight;
+        });
+        const totalAllWeight = allWeights.reduce((sum, w) => sum + w, 0);
+        
+        // Identify high influence properties (weight > 150% of average)
+        const avgWeight = 100 / included.length;
+        const highInfluenceThreshold = avgWeight * 1.5;
+        
+        // Calculate which properties are high influence based on current weighting method
+        const highInfluenceProps = included.filter((p, index) => {
+            let weightPercent = 0;
+            if (weightingMethod === 'price' && totalPrice > 0) {
+                weightPercent = (p.adjustedSalePrice / totalPrice) * 100;
+            } else if (weightingMethod === 'size' && totalSizeWeight > 0) {
+                weightPercent = (sizeWeights[index] / totalSizeWeight) * 100;
+            } else if (weightingMethod === 'total-size' && totalPropertySizeWeight > 0) {
+                weightPercent = (totalSizeWeights[index] / totalPropertySizeWeight) * 100;
+            } else if (weightingMethod === 'date' && totalDateWeight > 0) {
+                weightPercent = (dateWeights[index] / totalDateWeight) * 100;
+            } else if (weightingMethod === 'renovated' && totalRenovatedWeight > 0) {
+                weightPercent = (renovatedWeights[index] / totalRenovatedWeight) * 100;
+            } else if (weightingMethod === 'combined' && totalCombinedWeight > 0) {
+                weightPercent = (combinedWeights[index] / totalCombinedWeight) * 100;
+            } else if (weightingMethod === 'all-weighted' && totalAllWeight > 0) {
+                weightPercent = (allWeights[index] / totalAllWeight) * 100;
+            }
+            return weightPercent > highInfluenceThreshold;
+        });
+        
+        if (highInfluenceProps.length > 0) {
+            // Calculate averages using only high influence properties
+            const hiBuildingPrices = highInfluenceProps.map(p => p.buildingPriceSQFT);
+            const hiTotalPrices = highInfluenceProps.map(p => p.totalPriceSQFT);
+            
+            const hiAvgBuildingPriceSQFT = hiBuildingPrices.reduce((sum, v) => sum + v, 0) / hiBuildingPrices.length;
+            const hiAvgTotalPriceSQFT = hiTotalPrices.reduce((sum, v) => sum + v, 0) / hiTotalPrices.length;
+            
+            const hiMedianBuildingPriceSQFT = calculateMedian(hiBuildingPrices);
+            const hiMedianTotalPriceSQFT = calculateMedian(hiTotalPrices);
+            
+            const hiStdDevBuildingPriceSQFT = calculateStdDev(hiBuildingPrices, hiAvgBuildingPriceSQFT);
+            const hiStdDevTotalPriceSQFT = calculateStdDev(hiTotalPrices, hiAvgTotalPriceSQFT);
+            
+            // Calculate estimates using high influence averages
+            const hiEstimateA = targetBuildingSQFTWithFloors * hiAvgBuildingPriceSQFT;
+            const hiEstimateAMedian = targetBuildingSQFTWithFloors * hiMedianBuildingPriceSQFT;
+            const hiEstimateALow68 = targetBuildingSQFTWithFloors * (hiAvgBuildingPriceSQFT - hiStdDevBuildingPriceSQFT);
+            const hiEstimateAHigh68 = targetBuildingSQFTWithFloors * (hiAvgBuildingPriceSQFT + hiStdDevBuildingPriceSQFT);
+            const hiEstimateALow95 = targetBuildingSQFTWithFloors * (hiAvgBuildingPriceSQFT - (2 * hiStdDevBuildingPriceSQFT));
+            const hiEstimateAHigh95 = targetBuildingSQFTWithFloors * (hiAvgBuildingPriceSQFT + (2 * hiStdDevBuildingPriceSQFT));
+            
+            const hiEstimateB = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * hiAvgTotalPriceSQFT;
+            const hiEstimateBMedian = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * hiMedianTotalPriceSQFT;
+            const hiEstimateBLow68 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (hiAvgTotalPriceSQFT - hiStdDevTotalPriceSQFT);
+            const hiEstimateBHigh68 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (hiAvgTotalPriceSQFT + hiStdDevTotalPriceSQFT);
+            const hiEstimateBLow95 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (hiAvgTotalPriceSQFT - (2 * hiStdDevTotalPriceSQFT));
+            const hiEstimateBHigh95 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (hiAvgTotalPriceSQFT + (2 * hiStdDevTotalPriceSQFT));
+            
+            const hiBlendedEstimate = (hiEstimateA * 0.6) + (hiEstimateB * 0.4);
+            const hiBlendedMedian = (hiEstimateAMedian * 0.6) + (hiEstimateBMedian * 0.4);
+            const hiBlendedLow68 = (hiEstimateALow68 * 0.6) + (hiEstimateBLow68 * 0.4);
+            const hiBlendedHigh68 = (hiEstimateAHigh68 * 0.6) + (hiEstimateBHigh68 * 0.4);
+            const hiBlendedLow95 = (hiEstimateALow95 * 0.6) + (hiEstimateBLow95 * 0.4);
+            const hiBlendedHigh95 = (hiEstimateAHigh95 * 0.6) + (hiEstimateBHigh95 * 0.4);
+            
+            highInfluenceEstimateHTML = `
+                <div class="estimate-box high-influence-estimate">
+                    <h4>High Influence Properties Only</h4>
+                    <div class="estimate-value">${formatCurrency(hiBlendedMedian)}</div>
+                    <div class="estimate-formula">Median-Based - ${highInfluenceProps.length} high influence ${highInfluenceProps.length === 1 ? 'property' : 'properties'}</div>
+                    <div class="confidence-interval">
+                        <div class="ci-row"><span class="ci-label">Weighted Average:</span> <span class="ci-value">${formatCurrency(hiBlendedEstimate)}</span></div>
+                        <div class="ci-row"><span class="ci-label">68% Confidence (±1σ):</span> <span class="ci-value">${formatCurrency(hiBlendedLow68)} - ${formatCurrency(hiBlendedHigh68)}</span></div>
+                        <div class="ci-row"><span class="ci-label">95% Confidence (±2σ):</span> <span class="ci-value">${formatCurrency(hiBlendedLow95)} - ${formatCurrency(hiBlendedHigh95)}</span></div>
+                    </div>
+                </div>
+            `;
+        }
+    }
     
     const container = document.getElementById('estimates-container');
     container.innerHTML = `
         <div class="estimate-box primary">
-            <h4>Method A: Building-Based Estimate (Primary)</h4>
-            <div class="estimate-value">${formatCurrency(estimateA)}</div>
-            <div class="estimate-formula">${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(avgBuildingPriceSQFT)}</div>
+            <h4>Recommended Blended Estimate</h4>
+            <div class="estimate-value">${formatCurrency(blendedMedian)}</div>
+            <div class="estimate-formula">Median-Based (60% Method A + 40% Method B)</div>
             <div class="confidence-interval">
-                <div class="ci-row"><span class="ci-label">Median-Based:</span> <span class="ci-value">${formatCurrency(estimateAMedian)}</span></div>
-                <div class="ci-row"><span class="ci-label">Confidence Range:</span> <span class="ci-value">${formatCurrency(estimateALow)} - ${formatCurrency(estimateAHigh)}</span></div>
+                <div class="ci-row"><span class="ci-label">Weighted Average:</span> <span class="ci-value">${formatCurrency(blendedEstimate)}</span></div>
+                <div class="ci-row"><span class="ci-label">68% Confidence (±1σ):</span> <span class="ci-value">${formatCurrency(blendedLow68)} - ${formatCurrency(blendedHigh68)}</span></div>
+                <div class="ci-row"><span class="ci-label">95% Confidence (±2σ):</span> <span class="ci-value">${formatCurrency(blendedLow95)} - ${formatCurrency(blendedHigh95)}</span></div>
+            </div>
+        </div>
+        ${highInfluenceEstimateHTML}
+        <div class="estimate-box">
+            <h4>Method A: Building-Based Estimate</h4>
+            <div class="estimate-value">${formatCurrency(estimateAMedian)}</div>
+            <div class="estimate-formula">Median-Based: ${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(medianBuildingPriceSQFT)}</div>
+            <div class="confidence-interval">
+                <div class="ci-row"><span class="ci-label">Weighted Average:</span> <span class="ci-value">${formatCurrency(estimateA)}</span></div>
+                <div class="ci-row"><span class="ci-label">68% Confidence (±1σ):</span> <span class="ci-value">${formatCurrency(estimateALow68)} - ${formatCurrency(estimateAHigh68)}</span></div>
+                <div class="ci-row"><span class="ci-label">95% Confidence (±2σ):</span> <span class="ci-value">${formatCurrency(estimateALow95)} - ${formatCurrency(estimateAHigh95)}</span></div>
             </div>
         </div>
         <div class="estimate-box">
             <h4>Method B: Total Property-Based Estimate</h4>
-            <div class="estimate-value">${formatCurrency(estimateB)}</div>
-            <div class="estimate-formula">(${formatNumber(targetProperty.propertySQFT, 2)} + ${formatNumber(targetProperty.buildingSQFT, 2)}) SQFT × ${formatCurrency(avgTotalPriceSQFT)}</div>
+            <div class="estimate-value">${formatCurrency(estimateBMedian)}</div>
+            <div class="estimate-formula">Median-Based: (${formatNumber(targetProperty.propertySQFT, 2)} + ${formatNumber(targetProperty.buildingSQFT, 2)}) SQFT × ${formatCurrency(medianTotalPriceSQFT)}</div>
             <div class="confidence-interval">
-                <div class="ci-row"><span class="ci-label">Median-Based:</span> <span class="ci-value">${formatCurrency(estimateBMedian)}</span></div>
-                <div class="ci-row"><span class="ci-label">Confidence Range:</span> <span class="ci-value">${formatCurrency(estimateBLow)} - ${formatCurrency(estimateBHigh)}</span></div>
+                <div class="ci-row"><span class="ci-label">Weighted Average:</span> <span class="ci-value">${formatCurrency(estimateB)}</span></div>
+                <div class="ci-row"><span class="ci-label">68% Confidence (±1σ):</span> <span class="ci-value">${formatCurrency(estimateBLow68)} - ${formatCurrency(estimateBHigh68)}</span></div>
+                <div class="ci-row"><span class="ci-label">95% Confidence (±2σ):</span> <span class="ci-value">${formatCurrency(estimateBLow95)} - ${formatCurrency(estimateBHigh95)}</span></div>
             </div>
         </div>
     `;
     
     // Get selected direct comp
     const directCompProp = comparableProperties.find(p => p.isDirectComp);
-    const directCompValue = directCompProp ? directCompProp.salePrice : 0;
+    const directCompValue = directCompProp ? directCompProp.adjustedSalePrice : 0;
     const directCompAddress = directCompProp ? directCompProp.address : 'None selected';
     
-    // Calculate estimate based on direct comp's Building $ SQFT (using weighted averages when applicable)
+    // Calculate weighted blend between direct comp and market average based on selected weighting method
     let directCompBuildingPriceSQFT = 0;
     let directCompTotalPriceSQFT = 0;
+    let directCompEstimate = 0;
+    let directCompTotalEstimate = 0;
     
-    if (directCompProp) {
-        // If using weighted methods, calculate weighted average that gives high weight to direct comp
-        if (weightingMethod !== 'simple') {
-            const includedWithDirectComp = comparableProperties.filter(p => p.included && p.salePrice > 0);
-            
-            if (weightingMethod === 'price') {
-                const totalPrice = includedWithDirectComp.reduce((sum, p) => sum + p.salePrice, 0);
-                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p) => 
-                    sum + (p.buildingPriceSQFT * p.salePrice), 0) / totalPrice;
-                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p) => 
-                    sum + (p.totalPriceSQFT * p.salePrice), 0) / totalPrice;
-            } else if (weightingMethod === 'size') {
-                const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
-                const weights = includedWithDirectComp.map(p => {
-                    const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
-                    const sizeDiff = Math.abs(compSize - targetSize);
-                    return 1 / (1 + sizeDiff / targetSize);
-                });
-                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
-                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
-            } else if (weightingMethod === 'total-size') {
-                const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
-                const weights = includedWithDirectComp.map(p => {
-                    const compTotalSize = p.propertySQFT + p.buildingSQFT;
-                    const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
-                    return 1 / (1 + totalSizeDiff / targetTotalSize);
-                });
-                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
-                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
-            } else if (weightingMethod === 'date') {
-                const weights = includedWithDirectComp.map(p => {
-                    if (p.sellDate === 'N/A' || !p.sellDate) return 0.1;
-                    const dateParts = p.sellDate.split('/');
-                    if (dateParts.length !== 3) return 0.1;
+    if (directCompProp && included.length > 0) {
+        // Calculate weight factor for the direct comp based on selected weighting method
+        let directCompWeight = 1.0;
+        
+        if (weightingMethod === 'price') {
+            // Price weighting: higher prices get more weight
+            const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
+            directCompWeight = (directCompProp.adjustedSalePrice / totalPrice) * included.length;
+        } else if (weightingMethod === 'size') {
+            // Size similarity weighting: closer to target size = higher weight
+            const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
+            const compSize = directCompProp.floors * (directCompProp.buildingWidthFeet * directCompProp.buildingDepthFeet);
+            const sizeDiff = Math.abs(compSize - targetSize);
+            directCompWeight = 1 / (1 + sizeDiff / targetSize);
+            // Normalize against average weight
+            const avgSizeWeight = 1 / included.length;
+            directCompWeight = (directCompWeight / avgSizeWeight);
+        } else if (weightingMethod === 'total-size') {
+            // Total property size weighting
+            const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
+            const compTotalSize = directCompProp.propertySQFT + directCompProp.buildingSQFT;
+            const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
+            directCompWeight = 1 / (1 + totalSizeDiff / targetTotalSize);
+            const avgSizeWeight = 1 / included.length;
+            directCompWeight = (directCompWeight / avgSizeWeight);
+        } else if (weightingMethod === 'date') {
+            // Date recency weighting: more recent = higher weight
+            if (directCompProp.sellDate !== 'N/A' && directCompProp.sellDate) {
+                const dateParts = directCompProp.sellDate.split('/');
+                if (dateParts.length === 3) {
                     let year = parseInt(dateParts[2]);
                     if (year < 100) year += year < 50 ? 2000 : 1900;
                     const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
                     const today = new Date();
                     const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
-                    return Math.exp(-daysSinceSale / 525);
-                });
-                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
-                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
-            } else if (weightingMethod === 'renovated') {
-                const weights = includedWithDirectComp.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
-                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
-                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
-            } else if (weightingMethod === 'combined') {
-                const weights = includedWithDirectComp.map(p => {
-                    let weight = 1.0;
-                    if (targetProperty.renovated === p.renovated) weight *= 3.0;
-                    if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
-                    return weight;
-                });
-                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
-                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
-            } else if (weightingMethod === 'all-weighted') {
-                const totalPrice = includedWithDirectComp.reduce((sum, p) => sum + p.salePrice, 0);
-                const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
-                const weights = includedWithDirectComp.map(p => {
-                    let weight = 1.0;
-                    if (totalPrice > 0) weight *= (p.salePrice / totalPrice) * includedWithDirectComp.length;
-                    const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
-                    const sizeDiff = Math.abs(compSize - targetSize);
-                    const sizeWeight = 1 / (1 + sizeDiff / targetSize);
-                    const totalSizeWeight = includedWithDirectComp.map(comp => {
-                        const cSize = comp.floors * (comp.buildingWidthFeet * comp.buildingDepthFeet);
-                        const cDiff = Math.abs(cSize - targetSize);
-                        return 1 / (1 + cDiff / targetSize);
-                    }).reduce((sum, w) => sum + w, 0);
-                    if (totalSizeWeight > 0) weight *= (sizeWeight / totalSizeWeight) * includedWithDirectComp.length;
-                    if (p.sellDate !== 'N/A' && p.sellDate) {
-                        const dateParts = p.sellDate.split('/');
-                        if (dateParts.length === 3) {
-                            let year = parseInt(dateParts[2]);
-                            if (year < 100) year += year < 50 ? 2000 : 1900;
-                            const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-                            const today = new Date();
-                            const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
-                            const dateWeight = Math.exp(-daysSinceSale / 525);
-                            const totalDateWeight = includedWithDirectComp.map(comp => {
-                                if (comp.sellDate === 'N/A' || !comp.sellDate) return 0.1;
-                                const dParts = comp.sellDate.split('/');
-                                if (dParts.length !== 3) return 0.1;
-                                let y = parseInt(dParts[2]);
-                                if (y < 100) y += y < 50 ? 2000 : 1900;
-                                const sd = new Date(y, parseInt(dParts[0]) - 1, parseInt(dParts[1]));
-                                const td = new Date();
-                                const dss = (td - sd) / (1000 * 60 * 60 * 24);
-                                return Math.exp(-dss / 525);
-                            }).reduce((sum, w) => sum + w, 0);
-                            if (totalDateWeight > 0) weight *= (dateWeight / totalDateWeight) * includedWithDirectComp.length;
-                        }
-                    }
-                    if (p.renovated === targetProperty.renovated) weight *= 1.5;
-                    if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
-                    return weight;
-                });
-                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-                directCompBuildingPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
-                directCompTotalPriceSQFT = includedWithDirectComp.reduce((sum, p, i) => 
-                    sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+                    directCompWeight = Math.exp(-daysSinceSale / 525);
+                    const avgDateWeight = 1 / included.length;
+                    directCompWeight = (directCompWeight / avgDateWeight);
+                } else {
+                    directCompWeight = 0.1;
+                }
+            } else {
+                directCompWeight = 0.1;
             }
-        } else {
-            // Simple average - just use direct comp's values
-            directCompBuildingPriceSQFT = directCompProp.buildingPriceSQFT;
-            directCompTotalPriceSQFT = directCompProp.totalPriceSQFT;
+        } else if (weightingMethod === 'renovated') {
+            // Renovation status weighting
+            directCompWeight = directCompProp.renovated === 'Yes' ? 3.0 : 1.0;
+            const avgRenovatedWeight = 1 / included.length;
+            directCompWeight = (directCompWeight / avgRenovatedWeight);
+        } else if (weightingMethod === 'combined') {
+            // Combined weighting (renovated + originalDetails)
+            directCompWeight = 1.0;
+            if (targetProperty.renovated === directCompProp.renovated) directCompWeight *= 3.0;
+            if (targetProperty.originalDetails === directCompProp.originalDetails) directCompWeight *= 2.0;
+            const avgCombinedWeight = 1 / included.length;
+            directCompWeight = (directCompWeight / avgCombinedWeight);
+        } else if (weightingMethod === 'all-weighted') {
+            // All-weighted blend (combines all factors)
+            directCompWeight = 1.0;
+            
+            // Price factor
+            const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
+            if (totalPrice > 0) directCompWeight *= (directCompProp.adjustedSalePrice / totalPrice) * included.length;
+            
+            // Size similarity factor
+            const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
+            const compSize = directCompProp.floors * (directCompProp.buildingWidthFeet * directCompProp.buildingDepthFeet);
+            const sizeDiff = Math.abs(compSize - targetSize);
+            const sizeWeight = 1 / (1 + sizeDiff / targetSize);
+            directCompWeight *= sizeWeight * included.length;
+            
+            // Date recency factor
+            if (directCompProp.sellDate !== 'N/A' && directCompProp.sellDate) {
+                const dateParts = directCompProp.sellDate.split('/');
+                if (dateParts.length === 3) {
+                    let year = parseInt(dateParts[2]);
+                    if (year < 100) year += year < 50 ? 2000 : 1900;
+                    const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+                    const today = new Date();
+                    const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+                    const dateWeight = Math.exp(-daysSinceSale / 525);
+                    directCompWeight *= dateWeight * included.length;
+                }
+            }
+            
+            // Qualitative matches
+            if (directCompProp.renovated === targetProperty.renovated) directCompWeight *= 1.5;
+            if (directCompProp.originalDetails === targetProperty.originalDetails) directCompWeight *= 1.3;
         }
-    }
-    
-    // Calculate estimates using the weighted $ SQFT values
-    let directCompEstimate = 0;
-    let directCompTotalEstimate = 0;
-    if (directCompProp) {
+        
+        // Blend between direct comp's $/SQFT and market average based on weight
+        // Higher weight = more influence from direct comp
+        // Lower weight = more influence from market average
+        const blendRatio = Math.min(directCompWeight / 2, 0.85); // Cap at 85% direct comp influence
+        
+        directCompBuildingPriceSQFT = (directCompProp.buildingPriceSQFT * blendRatio) + (avgBuildingPriceSQFT * (1 - blendRatio));
+        directCompTotalPriceSQFT = (directCompProp.totalPriceSQFT * blendRatio) + (avgTotalPriceSQFT * (1 - blendRatio));
+        
+        // Calculate estimates using the blended $/SQFT values
         directCompEstimate = directCompBuildingPriceSQFT * targetBuildingSQFTWithFloors;
         const targetTotalSQFT = targetProperty.propertySQFT + targetProperty.buildingSQFT;
         directCompTotalEstimate = directCompTotalPriceSQFT * targetTotalSQFT;
@@ -980,7 +1153,7 @@ function calculateAndRenderEstimates() {
     
     // Reference values
     const refContainer = document.getElementById('reference-values');
-    const weightingLabel = weightingMethod === 'simple' ? '' : ' (' + avgTypeMap[weightingMethod] + ')';
+    const weightingMethodLabel = weightingMethod === 'simple' ? '' : avgTypeMap[weightingMethod];
     refContainer.innerHTML = `
         <div class="reference-box">
             <h4>Direct Comp Sale Price</h4>
@@ -988,12 +1161,14 @@ function calculateAndRenderEstimates() {
             <div class="average-count" style="margin-top: 5px;">${directCompAddress}</div>
         </div>
         <div class="reference-box">
-            <h4>Direct Comp Building-Based${weightingLabel}</h4>
+            <h4>Direct Comp Building-Based</h4>
+            ${weightingMethodLabel ? '<div class="average-count" style="margin-top: 5px; font-size: 12px; color: #7f8c8d;">' + weightingMethodLabel + '</div>' : ''}
             <div class="reference-value">${formatCurrency(directCompEstimate)}</div>
             <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompBuildingPriceSQFT) + ' × (' + targetProperty.floors + ' floors × ' + formatNumber(targetProperty.buildingWidthFeet, 2) + ' × ' + formatNumber(targetProperty.buildingDepthFeet, 2) + ')' : 'No comp selected'}</div>
         </div>
         <div class="reference-box">
-            <h4>Direct Comp Total-Based${weightingLabel}</h4>
+            <h4>Direct Comp Total-Based</h4>
+            ${weightingMethodLabel ? '<div class="average-count" style="margin-top: 5px; font-size: 12px; color: #7f8c8d;">' + weightingMethodLabel + '</div>' : ''}
             <div class="reference-value">${formatCurrency(directCompTotalEstimate)}</div>
             <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompTotalPriceSQFT) + ' × (' + formatNumber(targetProperty.propertySQFT, 2) + ' + ' + formatNumber(targetProperty.buildingSQFT, 2) + ')' : 'No comp selected'}</div>
         </div>
@@ -1075,6 +1250,7 @@ function setWeightingMethod(method) {
     
     renderComparables();
     calculateAndRenderEstimates();
+    updateMap(); // Update map to reflect new weights in heatmap
 }
 
 // Expose to global scope
@@ -1189,6 +1365,21 @@ function initializeMap() {
         zoomControl: false
     }).setView([centerLat, centerLng], 14);
     
+    // Create custom panes with specific z-index for layer ordering
+    // Default overlayPane is at z-index 400
+    map.createPane('amenitiesPane');
+    map.getPane('amenitiesPane').style.zIndex = 401; // Bottom overlay layer
+    map.getPane('amenitiesPane').style.opacity = 0.5; // Set overall opacity for amenities pane
+    
+    map.createPane('valueZonesPane');
+    map.getPane('valueZonesPane').style.zIndex = 402; // Middle overlay layer
+    
+    map.createPane('influencePane');
+    map.getPane('influencePane').style.zIndex = 403; // Top overlay layer (but below markers)
+    
+    map.createPane('markersPane');
+    map.getPane('markersPane').style.zIndex = 450; // Always on top
+    
     // Add minimal grayscale CartoDB tiles
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '© OpenStreetMap contributors, © CARTO',
@@ -1196,8 +1387,8 @@ function initializeMap() {
         subdomains: 'abcd'
     }).addTo(map);
     
-    // Create layers
-    markersLayer = L.layerGroup().addTo(map);
+    // Create layers with specific panes
+    markersLayer = L.layerGroup({ pane: 'markersPane' }).addTo(map);
     
     // Add legend (will be updated dynamically based on mode)
     const legend = L.control({ position: 'bottomright' });
@@ -1226,12 +1417,12 @@ function initializeMap() {
 // Get color based on price
 function getPriceColor(price, metric = 'salePrice') {
     // Color scale from green (low) to red (high)
-    const included = comparableProperties.filter(p => p.included && p.salePrice > 0);
+    const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
     if (included.length === 0) return '#3498db';
     
     let values = [];
     if (metric === 'salePrice') {
-        values = included.map(p => p.salePrice);
+        values = included.map(p => p.adjustedSalePrice);
     } else if (metric === 'buildingPriceSQFT') {
         values = included.map(p => p.buildingPriceSQFT);
     } else if (metric === 'totalPriceSQFT') {
@@ -1262,13 +1453,26 @@ function getPriceColor(price, metric = 'salePrice') {
     }
 }
 
+// Create marker tooltip content (hover)
+function createTooltipContent(prop, isTarget = false) {
+    const badge = isTarget ? 'TARGET' : prop.isDirectComp ? 'DIRECT COMP' : '';
+    const badgeSpan = badge ? `<span style="background: ${isTarget ? '#5372cfff' : '#eb70e9ff'}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 9px; margin-left: 6px;">${badge}</span>` : '';
+    
+    return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 12px; line-height: 1.4;">
+        <div style="font-weight: 600; margin-bottom: 4px;">${prop.address}${badgeSpan}</div>
+        <div><strong>Price:</strong> ${formatCurrency(prop.adjustedSalePrice || prop.salePrice || 0)}</div>
+        <div><strong>Building $/SQFT:</strong> ${formatCurrency(prop.buildingPriceSQFT || 0)}</div>
+        <div><strong>Renovated:</strong> ${prop.renovated}</div>
+    </div>`;
+}
+
 // Create marker popup content
 function createPopupContent(prop, isTarget = false) {
     const badge = isTarget ? '<span class="popup-badge badge-target">TARGET</span>' : 
                   prop.isDirectComp ? '<span class="popup-badge badge-direct">DIRECT COMP</span>' : '';
     
     const fields = [
-        { label: 'Sale Price', value: formatCurrency(prop.salePrice || 0) },
+        { label: 'Sale Price', value: formatCurrency(prop.adjustedSalePrice || prop.salePrice || 0) },
         { label: 'Building $ SQFT', value: formatCurrency(prop.buildingPriceSQFT || 0) },
         { label: 'Total $ SQFT', value: formatCurrency(prop.totalPriceSQFT || 0) },
         { label: 'Property SQFT', value: formatNumber(prop.propertySQFT, 0) },
@@ -1295,20 +1499,25 @@ function createPopupContent(prop, isTarget = false) {
 function updateMap() {
     if (!map) return;
     
-    // Clear existing layers
-    if (markersLayer) {
-        markersLayer.clearLayers();
-    }
+    // Clear existing heatmap layer
     if (heatmapLayer) {
         map.removeLayer(heatmapLayer);
         heatmapLayer = null;
     }
     
-    if (mapMode === 'markers') {
-        updateMapMarkers();
-    } else {
+    // Update the selected visualization mode (only if not 'none')
+    if (mapMode === 'heatmap') {
         updateMapHeatmap();
+    } else if (mapMode === 'value-zones') {
+        updateMapValueZones();
     }
+    // If mapMode is 'none', no heatmap layer is shown
+    
+    // Always update markers on top
+    if (markersLayer) {
+        markersLayer.clearLayers();
+    }
+    updateMapMarkers();
 }
 
 // Update map with markers
@@ -1326,7 +1535,13 @@ function updateMapMarkers() {
             weight: 2,
             opacity: 1,
             fillOpacity: 0.8
-        }).bindPopup(createPopupContent(targetProperty, true));
+        })
+        .bindTooltip(createTooltipContent(targetProperty, true), {
+            permanent: false,
+            direction: 'top',
+            offset: [0, -10]
+        })
+        .bindPopup(createPopupContent(targetProperty, true));
         
         markersLayer.addLayer(marker);
         bounds.push([targetProperty.coordinates.lat, targetProperty.coordinates.lng]);
@@ -1335,7 +1550,7 @@ function updateMapMarkers() {
     // Add comparable property markers
     comparableProperties.forEach(prop => {
         if (prop.coordinates && prop.included) {
-            const color = prop.isDirectComp ? '#eb70e9ff' : getPriceColor(prop.salePrice);
+            const color = prop.isDirectComp ? '#eb70e9ff' : getPriceColor(prop.adjustedSalePrice);
             
             const marker = L.circleMarker([prop.coordinates.lat, prop.coordinates.lng], {
                 radius: 8,
@@ -1344,7 +1559,13 @@ function updateMapMarkers() {
                 weight: 2,
                 opacity: 1,
                 fillOpacity: 0.7
-            }).bindPopup(createPopupContent(prop, false));
+            })
+            .bindTooltip(createTooltipContent(prop, false), {
+                permanent: false,
+                direction: 'top',
+                offset: [0, -10]
+            })
+            .bindPopup(createPopupContent(prop, false));
             
             markersLayer.addLayer(marker);
             bounds.push([prop.coordinates.lat, prop.coordinates.lng]);
@@ -1359,58 +1580,134 @@ function updateMapMarkers() {
 
 // Update map with heatmap
 function updateMapHeatmap() {
-    const metric = document.getElementById('heatmap-metric').value;
     const heatData = [];
     
-    // Collect all intensity values to determine max
-    const intensities = [];
+    // Calculate weights for all included properties (same logic as renderComparables)
+    const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0 && p.coordinates);
     
-    // Add target property
-    if (targetProperty && targetProperty.coordinates) {
-        let intensity = 0;
-        if (metric === 'buildingPriceSQFT') {
-            intensity = targetProperty.buildingPriceSQFT || 0;
-        } else if (metric === 'totalPriceSQFT') {
-            intensity = targetProperty.totalPriceSQFT || 0;
-        } else {
-            intensity = targetProperty.estimatedSale || 0;
-        }
-        intensities.push(intensity);
-        heatData.push([targetProperty.coordinates.lat, targetProperty.coordinates.lng, intensity / 1000]);
+    if (included.length === 0) return; // No data to display
+    
+    const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
+    const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
+    const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
+    
+    // Calculate all weight arrays based on current weighting method
+    let weights = [];
+    
+    if (weightingMethod === 'simple') {
+        // Simple average - equal weights
+        weights = included.map(() => 100 / included.length);
+    } else if (weightingMethod === 'price') {
+        // Price-weighted
+        weights = included.map(p => (p.adjustedSalePrice / totalPrice) * 100);
+    } else if (weightingMethod === 'size') {
+        // Size-similarity weighted
+        const sizeWeights = included.map(p => {
+            const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
+            const sizeDiff = Math.abs(compSize - targetSize);
+            return 1 / (1 + sizeDiff / targetSize);
+        });
+        const totalSizeWeight = sizeWeights.reduce((sum, w) => sum + w, 0);
+        weights = sizeWeights.map(w => (w / totalSizeWeight) * 100);
+    } else if (weightingMethod === 'total-size') {
+        // Total property size weighted
+        const totalSizeWeights = included.map(p => {
+            const compTotalSize = p.propertySQFT + p.buildingSQFT;
+            const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
+            return 1 / (1 + totalSizeDiff / targetTotalSize);
+        });
+        const totalPropertySizeWeight = totalSizeWeights.reduce((sum, w) => sum + w, 0);
+        weights = totalSizeWeights.map(w => (w / totalPropertySizeWeight) * 100);
+    } else if (weightingMethod === 'date') {
+        // Date-based weighted
+        const dateWeights = included.map(p => {
+            if (p.sellDate === 'N/A' || !p.sellDate) return 0.1;
+            const dateParts = p.sellDate.split('/');
+            if (dateParts.length !== 3) return 0.1;
+            let year = parseInt(dateParts[2]);
+            if (year < 100) year += year < 50 ? 2000 : 1900;
+            const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+            const today = new Date();
+            const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+            return Math.exp(-daysSinceSale / 525);
+        });
+        const totalDateWeight = dateWeights.reduce((sum, w) => sum + w, 0);
+        weights = dateWeights.map(w => (w / totalDateWeight) * 100);
+    } else if (weightingMethod === 'renovated') {
+        // Renovated-based weighted
+        const renovatedWeights = included.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
+        const totalRenovatedWeight = renovatedWeights.reduce((sum, w) => sum + w, 0);
+        weights = renovatedWeights.map(w => (w / totalRenovatedWeight) * 100);
+    } else if (weightingMethod === 'combined') {
+        // Combined weighted (renovated + originalDetails)
+        const combinedWeights = included.map(p => {
+            let weight = 1.0;
+            if (targetProperty.renovated === p.renovated) weight *= 3.0;
+            if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
+            return weight;
+        });
+        const totalCombinedWeight = combinedWeights.reduce((sum, w) => sum + w, 0);
+        weights = combinedWeights.map(w => (w / totalCombinedWeight) * 100);
+    } else if (weightingMethod === 'all-weighted') {
+        // All-weighted blend (combines all factors)
+        const allWeights = included.map((p, index) => {
+            let weight = 1.0;
+            
+            // Price component
+            if (totalPrice > 0) weight *= (p.adjustedSalePrice / totalPrice) * included.length;
+            
+            // Size similarity component
+            const compSize = p.floors * (p.buildingWidthFeet * p.buildingDepthFeet);
+            const sizeDiff = Math.abs(compSize - targetSize);
+            const sizeWeight = 1 / (1 + sizeDiff / targetSize);
+            weight *= sizeWeight * included.length;
+            
+            // Date recency component
+            if (p.sellDate !== 'N/A' && p.sellDate) {
+                const dateParts = p.sellDate.split('/');
+                if (dateParts.length === 3) {
+                    let year = parseInt(dateParts[2]);
+                    if (year < 100) year += year < 50 ? 2000 : 1900;
+                    const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
+                    const today = new Date();
+                    const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+                    const dateWeight = Math.exp(-daysSinceSale / 525);
+                    weight *= dateWeight * included.length;
+                }
+            }
+            
+            // Qualitative matches
+            if (p.renovated === targetProperty.renovated) weight *= 1.5;
+            if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
+            
+            return weight;
+        });
+        const totalAllWeight = allWeights.reduce((sum, w) => sum + w, 0);
+        weights = allWeights.map(w => (w / totalAllWeight) * 100);
     }
     
-    // Add comparable properties
-    comparableProperties.forEach(prop => {
-        if (prop.coordinates && prop.included) {
-            let intensity = 0;
-            if (metric === 'buildingPriceSQFT') {
-                intensity = prop.buildingPriceSQFT || 0;
-            } else if (metric === 'totalPriceSQFT') {
-                intensity = prop.totalPriceSQFT || 0;
-            } else {
-                intensity = prop.salePrice || 0;
-            }
-            intensities.push(intensity);
-            heatData.push([prop.coordinates.lat, prop.coordinates.lng, intensity / 1000]);
-        }
+    // Use weights as heatmap intensity (weight percentage directly represents influence)
+    included.forEach((prop, index) => {
+        heatData.push([prop.coordinates.lat, prop.coordinates.lng, weights[index]]);
     });
     
     if (heatData.length > 0) {
-        // Calculate dynamic max based on data
-        const maxIntensity = Math.max(...intensities);
-        const dynamicMax = (maxIntensity / 1000) * 1.2; // 20% above max for better color distribution
+        // Max intensity is 100% (highest weight percentage)
+        const maxWeight = Math.max(...weights);
+        const dynamicMax = maxWeight * 1.2; // 20% above max for better color distribution
         
         heatmapLayer = L.heatLayer(heatData, {
-            radius: 35,        // Increased from 25 for smoother visualization
-            blur: 25,          // Increased from 15 for more gradual transitions
+            radius: 40,        // Larger radius for better blob overlap
+            blur: 30,          // More blur for smoother blending between properties
             maxZoom: 17,
-            max: dynamicMax,   // Dynamic based on actual data
+            max: dynamicMax,   // Dynamic based on weight percentages
             gradient: {
-                0.0: '#4CAF50',
-                0.5: '#FFC107',
-                1.0: '#E74C3C'
+                0.0: '#4CAF50',  // Green = low influence
+                0.5: '#FFC107',  // Yellow = medium influence
+                1.0: '#E74C3C'   // Red = high influence
             },
-            minOpacity: 0.3    // Increased from 0.05 so lower values are more visible
+            minOpacity: 0.2,   // Lower opacity so overlapping areas become more visible
+            pane: 'influencePane'  // Use custom pane for layer ordering
         });
         
         // Patch before onAdd to intercept canvas creation at the earliest point
@@ -1441,48 +1738,73 @@ function updateMapHeatmap() {
 }
 
 // Show markers view
-function showMapMarkers() {
-    mapMode = 'markers';
-    document.getElementById('map-markers-btn').classList.add('active');
-    document.getElementById('map-heatmap-btn').classList.remove('active');
-    document.getElementById('heatmap-metric').style.display = 'none';
+// Removed showMapMarkers function - markers are now always displayed
+
+// Show heatmap view (toggleable)
+function showMapHeatmap() {
+    const btn = document.getElementById('map-heatmap-btn');
     
-    // Update legend for markers mode
-    const legendContent = document.getElementById('map-legend-content');
-    if (legendContent) {
-        legendContent.innerHTML = `
-            <h4>Price Range</h4>
-            <div class="legend-item"><span class="legend-color" style="background: #4CAF50;"></span> Low</div>
-            <div class="legend-item"><span class="legend-color" style="background: #F1C40F;"></span> Medium</div>
-            <div class="legend-item"><span class="legend-color" style="background: #E74C3C;"></span> High</div>
-            <div class="legend-item"><span class="legend-color" style="background: #5372cfff;"></span> Target</div>
-            <div class="legend-item"><span class="legend-color" style="background: #eb70e9ff;"></span> Direct Comp</div>
-        `;
+    // Toggle mode
+    if (mapMode === 'heatmap') {
+        // Turn off
+        mapMode = 'none';
+        btn.classList.remove('active');
+    } else {
+        // Turn on
+        mapMode = 'heatmap';
+        btn.classList.add('active');
+        document.getElementById('map-value-zones-btn').classList.remove('active');
+        
+        // Update legend for heatmap mode
+        const legendContent = document.getElementById('map-legend-content');
+        if (legendContent) {
+            const methodName = avgTypeMap[weightingMethod] || 'Simple Average';
+            legendContent.innerHTML = `
+                <h4>Influence Heat Map</h4>
+                <p style="font-size: 11px; margin: 5px 0; color: #666;">Shows where valuation is being pulled from</p>
+                <div style="background: linear-gradient(to right, #4CAF50, #FFC107, #E74C3C); height: 20px; border-radius: 3px; margin: 8px 0;"></div>
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666;">
+                    <span>Low Influence</span>
+                    <span>High Influence</span>
+                </div>
+                <p style="font-size: 10px; margin-top: 8px; color: #888;">Brighter/hotter areas = properties with more weight in estimate</p>
+                <p style="font-size: 9px; margin-top: 5px; color: #999; font-style: italic;">Using: ${methodName}</p>
+            `;
+        }
     }
     
     updateMap();
 }
 
-// Show heatmap view
-function showMapHeatmap() {
-    mapMode = 'heatmap';
-    document.getElementById('map-heatmap-btn').classList.add('active');
-    document.getElementById('map-markers-btn').classList.remove('active');
-    document.getElementById('heatmap-metric').style.display = 'inline-block';
+// Show value zones view (toggleable)
+function showMapValueZones() {
+    const btn = document.getElementById('map-value-zones-btn');
     
-    // Update legend for heatmap mode
-    const legendContent = document.getElementById('map-legend-content');
-    if (legendContent) {
-        legendContent.innerHTML = `
-            <h4>Price Heat Map</h4>
-            <p style="font-size: 11px; margin: 5px 0; color: #666;">Intensity shows property value concentration</p>
-            <div style="background: linear-gradient(to right, #4CAF50, #FFC107, #E74C3C); height: 20px; border-radius: 3px; margin: 8px 0;"></div>
-            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666;">
-                <span>Lower</span>
-                <span>Higher</span>
-            </div>
-            <p style="font-size: 10px; margin-top: 8px; color: #888;">Brighter/warmer colors = higher prices in that area</p>
-        `;
+    // Toggle mode
+    if (mapMode === 'value-zones') {
+        // Turn off
+        mapMode = 'none';
+        btn.classList.remove('active');
+    } else {
+        // Turn on
+        mapMode = 'value-zones';
+        btn.classList.add('active');
+        document.getElementById('map-heatmap-btn').classList.remove('active');
+        
+        // Update legend for value zones mode
+        const legendContent = document.getElementById('map-legend-content');
+        if (legendContent) {
+            legendContent.innerHTML = `
+                <h4>Value Zones</h4>
+                <p style="font-size: 11px; margin: 5px 0; color: #666;">Property value concentration</p>
+                <div style="background: linear-gradient(to right, #E74C3C, #FFC107, #4CAF50); height: 20px; border-radius: 3px; margin: 8px 0;"></div>
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666;">
+                    <span>Lower Value</span>
+                    <span>Higher Value</span>
+                </div>
+                <p style="font-size: 10px; margin-top: 8px; color: #888;">Green areas = expensive properties (hot zones)</p>
+            `;
+        }
     }
     
     updateMap();
@@ -1492,6 +1814,114 @@ function showMapHeatmap() {
 function updateHeatmap() {
     if (mapMode === 'heatmap') {
         updateMap();
+    }
+}
+
+// Update map with value zones (property value gradient)
+function updateMapValueZones() {
+    const heatPoints = [];
+    
+    // Get all included properties with valid data
+    const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0 && p.coordinates);
+    
+    if (included.length === 0) return;
+    
+    // Find min and max prices for normalization
+    const prices = included.map(p => p.adjustedSalePrice);
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    const priceRange = maxPrice - minPrice;
+    
+    // Create dense grid of heat points for smooth continuous gradient (like Amenities Overlay)
+    included.forEach(prop => {
+        // Normalize price to 0-1 range
+        const normalizedIntensity = priceRange > 0 ? (prop.adjustedSalePrice - minPrice) / priceRange : 0.5;
+        // Apply exponential transformation for sharper falloff
+        const exponentialIntensity = Math.pow(normalizedIntensity, 2.0);
+        const weight = exponentialIntensity;
+        
+        // Create multiple concentric rings of points for smooth falloff
+        const rings = 8;  // More rings for smoother gradient
+        const pointsPerRing = 24;  // More points around each ring
+        const maxRadius = 0.0015;  // Radius for gradient spread
+        
+        // Add multiple center points with full weight to fill the core
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, weight]);
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, weight]);
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, weight]);
+        
+        // Add very tight inner ring to fill any gap
+        const innerRingPoints = 12;
+        const innerRadius = maxRadius / 20; // Very small inner ring
+        for (let i = 0; i < innerRingPoints; i++) {
+            const angle = (Math.PI * 2 * i) / innerRingPoints;
+            heatPoints.push([
+                prop.coordinates.lat + Math.cos(angle) * innerRadius,
+                prop.coordinates.lng + Math.sin(angle) * innerRadius,
+                weight * 0.98
+            ]);
+        }
+        
+        // Add concentric rings with decreasing weight
+        for (let ring = 1; ring <= rings; ring++) {
+            const ringRadius = (maxRadius / rings) * ring;
+            const ringWeight = weight * (1 - (ring / (rings + 2))); // Gentler falloff
+            
+            for (let i = 0; i < pointsPerRing; i++) {
+                const angle = (Math.PI * 2 * i) / pointsPerRing;
+                heatPoints.push([
+                    prop.coordinates.lat + Math.cos(angle) * ringRadius,
+                    prop.coordinates.lng + Math.sin(angle) * ringRadius,
+                    ringWeight
+                ]);
+            }
+        }
+    });
+    
+    if (heatPoints.length > 0) {
+        heatmapLayer = L.heatLayer(heatPoints, {
+            radius: 80,        // Larger radius to blend all ring points together
+            blur: 50,          // High blur for smooth blending
+            maxZoom: 17,
+            max: 100,          // Lower max so center reaches full intensity in gradient
+            gradient: {
+                0.0: 'rgba(231, 76, 60, 0.0)',     // Red = cheap (transparent at edges)
+                0.1: 'rgba(231, 76, 60, 0.3)',     // Red
+                0.25: 'rgba(255, 107, 74, 0.4)',   // Red-orange
+                0.4: 'rgba(255, 152, 0, 0.45)',    // Orange
+                0.55: 'rgba(255, 193, 7, 0.5)',    // Amber
+                0.7: 'rgba(255, 235, 59, 0.55)',   // Yellow
+                0.82: 'rgba(205, 220, 57, 0.6)',   // Yellow-green
+                0.9: 'rgba(139, 195, 74, 0.65)',   // Light green
+                1.0: 'rgba(76, 175, 80, 0.7)'      // Bright green = expensive (center)
+            },
+            minOpacity: 0,     // No minimum opacity to show full gradient including center
+            pane: 'valueZonesPane'  // Use custom pane for layer ordering
+        });
+        
+        // Patch for canvas performance
+        const originalCreateCanvas = heatmapLayer._initCanvas;
+        if (originalCreateCanvas) {
+            heatmapLayer._initCanvas = function() {
+                originalCreateCanvas.call(this);
+                if (this._canvas) {
+                    const canvas = this._canvas;
+                    const originalGetContext = canvas.getContext.bind(canvas);
+                    canvas.getContext = function(contextType, contextAttributes) {
+                        if (contextType === '2d') {
+                            return originalGetContext(contextType, { ...contextAttributes, willReadFrequently: true });
+                        }
+                        return originalGetContext(contextType, contextAttributes);
+                    };
+                }
+            };
+        }
+        
+        heatmapLayer.addTo(map);
+        
+        // Center map on data
+        const bounds = heatPoints.map(d => [d[0], d[1]]);
+        map.fitBounds(bounds, { padding: [30, 30] });
     }
 }
 
@@ -1572,40 +2002,53 @@ function createAmenitiesOverlay() {
         maxZoom: 17,
         max: 1.2,          // Higher threshold to show only strongest areas
         gradient: {
-            0.0: 'rgba(220, 50, 50, 0.4)',     // Red/pink for low desirability
-            0.2: 'rgba(255, 120, 80, 0.4)',    // Red-orange
-            0.35: 'rgba(255, 180, 60, 0.4)',   // Orange
-            0.5: 'rgba(255, 220, 80, 0.4)',    // Yellow
-            0.65: 'rgba(200, 240, 120, 0.4)',  // Yellow-green
-            0.8: 'rgba(120, 210, 120, 0.45)',  // Light green
-            1.0: 'rgba(60, 170, 90, 0.5)'      // Strong green
+            0.0: 'rgba(220, 50, 50, 0.15)',    // Red/pink for low desirability (more transparent)
+            0.2: 'rgba(255, 120, 80, 0.2)',    // Red-orange
+            0.35: 'rgba(255, 180, 60, 0.25)',  // Orange
+            0.5: 'rgba(255, 220, 80, 0.25)',   // Yellow
+            0.65: 'rgba(200, 240, 120, 0.25)', // Yellow-green
+            0.8: 'rgba(120, 210, 120, 0.3)',   // Light green
+            1.0: 'rgba(60, 170, 90, 0.35)'     // Strong green (more transparent)
         },
-        minOpacity: 0.2    // Higher minimum to cut off weak areas
+        minOpacity: 0.1,   // Lower minimum for more transparency
+        pane: 'amenitiesPane'  // Use custom pane for layer ordering
     });
-    
-    // Set willReadFrequently on the canvas to suppress warning
-    setTimeout(() => {
-        const canvases = map.getPane('overlayPane').getElementsByTagName('canvas');
-        for (let canvas of canvases) {
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        }
-    }, 100);
 }
 
 // Toggle amenities overlay
 function toggleAmenitiesOverlay() {
     showAmenitiesOverlay = !showAmenitiesOverlay;
     
-    if (showAmenitiesOverlay && amenitiesOverlayLayer) {
-        map.addLayer(amenitiesOverlayLayer);
-    } else if (amenitiesOverlayLayer) {
-        map.removeLayer(amenitiesOverlayLayer);
+    const btn = document.getElementById('map-amenities-btn');
+    if (showAmenitiesOverlay) {
+        if (btn) btn.classList.add('active');
+        if (amenitiesOverlayLayer) {
+            map.addLayer(amenitiesOverlayLayer);
+            
+            // Set canvas opacity after layer is added
+            // Use setTimeout to ensure canvas is created
+            setTimeout(() => {
+                // Access canvas directly from the layer object
+                if (amenitiesOverlayLayer._canvas) {
+                    const canvas = amenitiesOverlayLayer._canvas;
+                    canvas.style.opacity = '0.7';
+                    
+                    // Set z-index directly on canvas to ensure it stays below other layers
+                    canvas.style.zIndex = '1';
+                    
+                    console.log('Set canvas opacity to 0.7 and z-index to 1');
+                }
+            }, 100);
+        }
+    } else {
+        if (btn) btn.classList.remove('active');
+        if (amenitiesOverlayLayer) map.removeLayer(amenitiesOverlayLayer);
     }
 }
 
 // Expose map functions to global scope
-window.showMapMarkers = showMapMarkers;
 window.showMapHeatmap = showMapHeatmap;
+window.showMapValueZones = showMapValueZones;
 window.updateHeatmap = updateHeatmap;
 window.toggleAmenitiesOverlay = toggleAmenitiesOverlay;
 
