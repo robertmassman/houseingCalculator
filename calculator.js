@@ -2331,13 +2331,13 @@ function updateMapCombined() {
 
         // Normalize price (0-1) - controls COLOR (hue position in gradient)
         const normalizedPrice = priceRange > 0 ? (prop.adjustedSalePrice - minPrice) / priceRange : 0.5;
-        const exponentialPrice = Math.pow(normalizedPrice, 2.0);
 
         // Use price as the base intensity (determines position in gradient = color)
         // Then multiply by weight to adjust brightness (high weight = more visible)
         // This way: expensive properties are green, cheap are red (value zones preserved)
         // And high-influence areas are brighter, low-influence are dimmer
-        const colorPosition = exponentialPrice; // 0 = red (cheap), 1 = green (expensive)
+        // Using linear scaling for proportional representation
+        const colorPosition = normalizedPrice; // 0 = red (cheap), 1 = green (expensive)
         const intensityMultiplier = 0.3 + (normalizedWeight * 0.7); // Weight affects visibility (0.3-1.0 range)
         const finalIntensity = colorPosition * intensityMultiplier;
 
@@ -2448,9 +2448,8 @@ function updateMapValueZones() {
     included.forEach(prop => {
         // Normalize price to 0-1 range
         const normalizedIntensity = priceRange > 0 ? (prop.adjustedSalePrice - minPrice) / priceRange : 0.5;
-        // Apply exponential transformation for sharper falloff
-        const exponentialIntensity = Math.pow(normalizedIntensity, 2.0);
-        const weight = exponentialIntensity;
+        // Use linear scaling for proportional representation
+        const weight = normalizedIntensity;
 
         // Create denser grid of heat points for smooth continuous gradient without artifacts
         const rings = 12;  // More rings for smoother coverage
