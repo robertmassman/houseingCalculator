@@ -91,6 +91,133 @@ function daysBetween(fromDate, toDate = new Date()) {
     return (toDate - fromDate) / (1000 * 60 * 60 * 24);
 }
 
+/**
+ * Calculate weights for comparable properties based on selected weighting method
+ * Centralizes all weight calculation logic to eliminate duplication
+ * @param {Array} properties - Array of comparable properties (must be included and have valid data)
+ * @param {Object} targetProperty - Target property object for comparison
+ * @param {string} method - Weighting method: 'simple', 'price', 'size', 'total-size', 'date', 'renovated', 'combined', 'all-weighted'
+ * @returns {Array} - Array of weight percentages (sum = 100) for each property
+ */
+function calculatePropertyWeights(properties, targetProperty, method) {
+    if (!properties || properties.length === 0) return [];
+    
+    let rawWeights = [];
+    
+    // Calculate raw weights based on method
+    switch(method) {
+        case 'simple':
+            // Equal weight for all properties
+            rawWeights = properties.map(() => 1.0);
+            break;
+            
+        case 'price':
+            // Properties weighted by their sale price
+            rawWeights = properties.map(p => p.adjustedSalePrice);
+            break;
+            
+        case 'size':
+            // Properties weighted by size similarity to target
+            const targetSize = targetProperty.buildingSQFT;
+            rawWeights = properties.map(p => {
+                const compSize = p.buildingSQFT;
+                const sizeDiff = Math.abs(compSize - targetSize);
+                return 1 / (1 + sizeDiff / targetSize);
+            });
+            break;
+            
+        case 'total-size':
+            // Properties weighted by total property size similarity
+            const targetTotalSize = calculateTotalPropertySQFT(
+                targetProperty.propertySQFT, 
+                targetProperty.buildingSQFT, 
+                targetProperty.buildingWidthFeet, 
+                targetProperty.buildingDepthFeet
+            );
+            rawWeights = properties.map(p => {
+                const compTotalSize = calculateTotalPropertySQFT(
+                    p.propertySQFT, 
+                    p.buildingSQFT, 
+                    p.buildingWidthFeet, 
+                    p.buildingDepthFeet
+                );
+                const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
+                return 1 / (1 + totalSizeDiff / targetTotalSize);
+            });
+            break;
+            
+        case 'date':
+            // Properties weighted by sale date recency
+            rawWeights = properties.map(p => {
+                const saleDate = parseACRISDate(p.sellDate);
+                if (!saleDate) return 0.1; // Penalize invalid dates
+                const daysSinceSale = daysBetween(saleDate);
+                return Math.exp(-daysSinceSale / 525); // 525-day half-life
+            });
+            break;
+            
+        case 'renovated':
+            // Renovated properties weighted higher
+            rawWeights = properties.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
+            break;
+            
+        case 'combined':
+            // Combined weighting based on renovated and original details matching
+            rawWeights = properties.map(p => {
+                let weight = 1.0;
+                if (targetProperty.renovated === p.renovated) weight *= 3.0;
+                if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
+                return weight;
+            });
+            break;
+            
+        case 'all-weighted':
+            // Comprehensive blend of all factors
+            const totalPrice = properties.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
+            const targetBuildingSize = targetProperty.buildingSQFT;
+            
+            rawWeights = properties.map(p => {
+                let weight = 1.0;
+                
+                // Price component
+                if (totalPrice > 0) {
+                    weight *= (p.adjustedSalePrice / totalPrice) * properties.length;
+                }
+                
+                // Size similarity component
+                const compSize = p.buildingSQFT;
+                const sizeDiff = Math.abs(compSize - targetBuildingSize);
+                const sizeWeight = 1 / (1 + sizeDiff / targetBuildingSize);
+                weight *= sizeWeight * properties.length;
+                
+                // Date recency component
+                const saleDate = parseACRISDate(p.sellDate);
+                if (saleDate) {
+                    const daysSinceSale = daysBetween(saleDate);
+                    const dateWeight = Math.exp(-daysSinceSale / 525);
+                    weight *= dateWeight * properties.length;
+                }
+                
+                // Qualitative match multipliers
+                if (p.renovated === targetProperty.renovated) weight *= 1.5;
+                if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
+                
+                return weight;
+            });
+            break;
+            
+        default:
+            // Default to simple equal weighting
+            rawWeights = properties.map(() => 1.0);
+    }
+    
+    // Normalize to percentages (sum = 100)
+    const totalWeight = rawWeights.reduce((sum, w) => sum + w, 0);
+    if (totalWeight === 0) return properties.map(() => 100 / properties.length); // Fallback to equal weights
+    
+    return rawWeights.map(w => (w / totalWeight) * 100);
+}
+
 // Utility function to format number
 function formatNumber(value, decimals = 2) {
     if (!value) return '0';
