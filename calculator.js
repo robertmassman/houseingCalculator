@@ -973,17 +973,11 @@ function calculateAndRenderAverages() {
                 weight *= sizeWeight * included.length;
 
                 // Date recency factor
-                if (p.sellDate !== 'N/A' && p.sellDate) {
-                    const dateParts = p.sellDate.split('/');
-                    if (dateParts.length === 3) {
-                        let year = parseInt(dateParts[2]);
-                        if (year < 100) year += year < 50 ? 2000 : 1900;
-                        const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-                        const today = new Date();
-                        const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
-                        const dateWeight = Math.exp(-daysSinceSale / 525);
-                        weight *= dateWeight * included.length;
-                    }
+                const saleDate = parseACRISDate(p.sellDate);
+                if (saleDate) {
+                    const daysSinceSale = daysBetween(saleDate);
+                    const dateWeight = Math.exp(-daysSinceSale / 525);
+                    weight *= dateWeight * included.length;
                 }
 
                 // Qualitative matches
@@ -1232,18 +1226,11 @@ function calculateAndRenderEstimates() {
         } else if (weightingMethod === 'date') {
             // Date-based weighted average (more recent sales weighted higher)
             const weights = included.map(p => {
-                if (p.sellDate === 'N/A' || !p.sellDate) {
-                    return 0.1; // Penalize unconfirmed sales
+                const saleDate = parseACRISDate(p.sellDate);
+                if (!saleDate) {
+                    return 0.1; // Penalize unconfirmed/invalid sales
                 }
-                const dateParts = p.sellDate.split('/');
-                if (dateParts.length !== 3) return 0.1;
-                let year = parseInt(dateParts[2]);
-                if (year < 100) {
-                    year += year < 50 ? 2000 : 1900;
-                }
-                const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-                const today = new Date();
-                const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+                const daysSinceSale = daysBetween(saleDate);
                 return Math.exp(-daysSinceSale / 525);
             });
             const totalWeight = weights.reduce((sum, w) => sum + w, 0);
@@ -1284,17 +1271,11 @@ function calculateAndRenderEstimates() {
                 weight *= sizeWeight * included.length;
 
                 // Date recency factor
-                if (p.sellDate !== 'N/A' && p.sellDate) {
-                    const dateParts = p.sellDate.split('/');
-                    if (dateParts.length === 3) {
-                        let year = parseInt(dateParts[2]);
-                        if (year < 100) year += year < 50 ? 2000 : 1900;
-                        const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-                        const today = new Date();
-                        const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
-                        const dateWeight = Math.exp(-daysSinceSale / 525);
-                        weight *= dateWeight * included.length;
-                    }
+                const saleDate = parseACRISDate(p.sellDate);
+                if (saleDate) {
+                    const daysSinceSale = daysBetween(saleDate);
+                    const dateWeight = Math.exp(-daysSinceSale / 525);
+                    weight *= dateWeight * included.length;
                 }
 
                 // Qualitative matches
