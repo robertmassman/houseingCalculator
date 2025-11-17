@@ -1250,37 +1250,55 @@ function calculateAndRenderEstimates() {
     let stdDevBuildingOnlyPriceSQFT = 0;
 
     if (included.length > 0) {
+        // Apply property adjustment factors to each comparable
+        // This adjusts comp prices based on differences from target (size, renovation, lot, width, details)
+        // Industry-standard CMA (Comparative Market Analysis) approach
+        const adjustedComps = included.map(p => {
+            const adjustment = calculatePropertyAdjustments(p, targetProperty);
+            const adjustedPrice = p.adjustedSalePrice * adjustment.adjustmentFactor;
+            return {
+                ...p,
+                propertyAdjustment: adjustment,
+                adjustedPriceForComparison: adjustedPrice,
+                adjustedBuildingPriceSQFT: adjustedPrice / p.buildingSQFT,
+                adjustedTotalPriceSQFT: adjustedPrice / calculateTotalPropertySQFT(p.propertySQFT, p.buildingSQFT, p.buildingWidthFeet, p.buildingDepthFeet)
+            };
+        });
+        
         // Extract values for median and std dev calculations
-        const buildingPrices = included.map(p => p.buildingPriceSQFT);
-        const totalPrices = included.map(p => p.totalPriceSQFT);
+        // Use adjusted prices for building and total $/SQFT
+        const buildingPrices = adjustedComps.map(p => p.adjustedBuildingPriceSQFT);
+        const totalPrices = adjustedComps.map(p => p.adjustedTotalPriceSQFT);
         
         // Calculate building-only prices (with land value extracted from each comp)
-        const buildingOnlyPrices = included.map(p => 
-            calculateBuildingOnlyPriceSQFT(p.adjustedSalePrice, p.buildingSQFT, p.propertySQFT)
+        // Use adjusted prices for more accurate land value estimation
+        const buildingOnlyPrices = adjustedComps.map(p => 
+            calculateBuildingOnlyPriceSQFT(p.adjustedPriceForComparison, p.buildingSQFT, p.propertySQFT)
         );
 
         // Calculate weights using centralized utility function
+        // Note: weights are based on original property characteristics (not adjusted prices)
         const weightPercentages = calculatePropertyWeights(included, targetProperty, weightingMethod);
         
         // Convert percentages back to raw weights (0-1 scale) for weighted average calculation
         const weights = weightPercentages.map(w => w / 100);
         const totalWeight = weights.reduce((sum, w) => sum + w, 0);
         
-        // Calculate weighted averages
+        // Calculate weighted averages using adjusted prices
         if (weightingMethod === 'simple') {
             // Simple average
-            avgBuildingPriceSQFT = included.reduce((sum, p) => sum + p.buildingPriceSQFT, 0) / included.length;
-            avgTotalPriceSQFT = included.reduce((sum, p) => sum + p.totalPriceSQFT, 0) / included.length;
+            avgBuildingPriceSQFT = adjustedComps.reduce((sum, p) => sum + p.adjustedBuildingPriceSQFT, 0) / adjustedComps.length;
+            avgTotalPriceSQFT = adjustedComps.reduce((sum, p) => sum + p.adjustedTotalPriceSQFT, 0) / adjustedComps.length;
         } else {
-            // Weighted average using calculated weights
-            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
-            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
+            // Weighted average using calculated weights and adjusted prices
+            avgBuildingPriceSQFT = adjustedComps.reduce((sum, p, i) => sum + (p.adjustedBuildingPriceSQFT * weights[i]), 0) / totalWeight;
+            avgTotalPriceSQFT = adjustedComps.reduce((sum, p, i) => sum + (p.adjustedTotalPriceSQFT * weights[i]), 0) / totalWeight;
         }
         
-        // Calculate simple average for building-only prices
+        // Calculate simple average for building-only prices (using adjusted prices)
         avgBuildingOnlyPriceSQFT = buildingOnlyPrices.reduce((sum, v) => sum + v, 0) / buildingOnlyPrices.length;
 
-        // Calculate median and standard deviation
+        // Calculate median and standard deviation (all using adjusted prices)
         medianBuildingPriceSQFT = calculateMedian(buildingPrices);
         medianTotalPriceSQFT = calculateMedian(totalPrices);
         medianBuildingOnlyPriceSQFT = calculateMedian(buildingOnlyPrices);
