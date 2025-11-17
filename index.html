@@ -114,6 +114,45 @@
             </table>
         </div>
         
+        <!-- Appreciation Methodology Info -->
+        <div class="info-section" style="background: #e8f5e9; padding: 15px; border-radius: 6px; margin: 40px 0 20px 0; border-left: 4px solid #4caf50;">
+            <h3 style="margin: 0 0 10px 0; color: #2e7d32; font-size: 16px;">📊 Market-Based Appreciation Methodology</h3>
+            <div style="color: #33691e; font-size: 13px; line-height: 1.7;">
+                <p style="margin: 0 0 12px 0;"><strong>Industry-Standard Approach:</strong> This calculator uses actual Crown Heights historical appreciation data (2019-2025) rather than a simple compound formula. Sale prices are adjusted based on when the property was sold.</p>
+                
+                <p style="margin: 0 0 12px 0;"><strong>Three Methods Applied:</strong></p>
+                <ul style="margin: 0 0 12px 20px; line-height: 1.8;">
+                    <li><strong>Recent Sales (&lt; 6 months):</strong> No adjustment needed</li>
+                    <li><strong>Short-term (&lt; 2 years):</strong> Linear appreciation using actual annual rates</li>
+                    <li><strong>Long-term (2+ years):</strong> Year-by-year compounding with historical data</li>
+                </ul>
+                
+                <p style="margin: 0 0 12px 0;"><strong>Confidence Intervals:</strong> Each adjusted price includes an uncertainty range (±%) reflecting market volatility. This acknowledges that appreciation estimates contain inherent uncertainty, especially for older sales.</p>
+                
+                <p style="margin: 0; font-style: italic; font-size: 12px;"><strong>Data Sources:</strong> Zillow Home Value Index (ZHVI), StreetEasy market reports, NYC Department of Finance sales data. Historical rates: 2019 (+4.5%), 2020 (+8.2%), 2021 (+12.8%), 2022 (+3.5%), 2023 (-1.8%), 2024 (+4.8%), 2025 (+4.2% est.)</p>
+            </div>
+        </div>
+        
+        <!-- Blended Estimate Calibration Info -->
+        <div class="info-section" style="background: #e3f2fd; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #2196f3;">
+            <h3 style="margin: 0 0 10px 0; color: #1565c0; font-size: 16px;">🎯 Data-Calibrated Blended Estimate</h3>
+            <div style="color: #0d47a1; font-size: 13px; line-height: 1.7;">
+                <p style="margin: 0 0 12px 0;"><strong>Automatic Optimization:</strong> The calculator automatically determines the optimal building/land value split by analyzing your selected comparable properties. This is more accurate than using a fixed ratio.</p>
+                
+                <p style="margin: 0 0 12px 0;"><strong>Industry Standards for Urban Brooklyn Multi-Family:</strong></p>
+                <ul style="margin: 0 0 12px 20px; line-height: 1.8;">
+                    <li><strong>Building Value:</strong> 60-80% (improvements, structures, interior)</li>
+                    <li><strong>Land Value:</strong> 20-40% (lot size, location, development potential)</li>
+                </ul>
+                
+                <p style="margin: 0 0 12px 0;"><strong>How Calibration Works:</strong> The system tests different building/land splits (60/40 to 80/20) and selects the ratio that minimizes prediction error across your comparable properties using cross-validation. This ensures the blend reflects actual market behavior.</p>
+                
+                <p style="margin: 0 0 12px 0;"><strong>Why This Matters:</strong> Different neighborhoods and property types have different value distributions. Park Slope land might be worth 35% of total value, while East New York land might be 25%. Calibration adapts to your specific market data.</p>
+                
+                <p style="margin: 0; font-style: italic; font-size: 12px;"><strong>Display:</strong> The estimated value shows the calibrated split (e.g., "65% Building / 35% Land") along with the R² goodness-of-fit metric and sample size used for calibration.</p>
+            </div>
+        </div>
+        
         <!-- Bottom Disclaimer -->
         <div class="disclaimer" style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 40px 0 20px 0; border-top: 3px solid #95a5a6;">
             <h3 style="margin: 0 0 10px 0; color: #34495e; font-size: 16px;">Professional Standards & Limitations</h3>

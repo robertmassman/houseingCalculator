@@ -927,22 +927,133 @@ function setAppreciationRate(rate) {
 // Expose to global scope
 window.setAppreciationRate = setAppreciationRate;
 
+// Estimate base land value for a property (Brooklyn/Crown Heights market rates)
+function estimateBaseLandValue(lotSQFT) {
+    // Base land value: ~$100-$150 per SQFT for typical Crown Heights lot
+    // This represents the inherent value of the land itself (not including lot size premium/discount)
+    const baseLandValuePerSQFT = 100; // Conservative estimate - adjustments handle size differences
+    return lotSQFT * baseLandValuePerSQFT;
+}
+
+// Calculate building-only price per SQFT (with land value extracted)
+function calculateBuildingOnlyPriceSQFT(totalSalePrice, buildingSQFT, lotSQFT) {
+    if (!buildingSQFT || buildingSQFT === 0) return 0;
+    
+    // Estimate the base land value
+    const estimatedLandValue = estimateBaseLandValue(lotSQFT);
+    
+    // Subtract land value from total sale price to get building-only value
+    const buildingOnlyValue = totalSalePrice - estimatedLandValue;
+    
+    // Calculate building-only $/SQFT
+    return buildingOnlyValue / buildingSQFT;
+}
+
+// Calculate land adjustment based on lot size (qualitative, not percentage-based)
+function calculateLandAdjustment(targetLotSQFT, compLotSQFTs) {
+    if (!compLotSQFTs || compLotSQFTs.length === 0) {
+        return { adjustment: 0, typical: 0, difference: 0, description: 'No data', baseLandValue: 0 };
+    }
+    
+    // Calculate typical (median) lot size from comps
+    const typicalLotSize = calculateMedian(compLotSQFTs);
+    const lotDifference = targetLotSQFT - typicalLotSize;
+    
+    let adjustment = 0;
+    let description = '';
+    
+    if (lotDifference > 500) {
+        // Large lot premium: +$75k to +$100k
+        adjustment = 75000 + (Math.min(lotDifference - 500, 1000) / 1000) * 25000;
+        description = 'Large lot premium';
+    } else if (lotDifference > 200) {
+        // Medium lot premium: +$50k to +$75k
+        adjustment = 50000 + ((lotDifference - 200) / 300) * 25000;
+        description = 'Above-average lot';
+    } else if (lotDifference < -200) {
+        // Small lot penalty: -$25k to -$50k
+        adjustment = -25000 + (Math.max(lotDifference + 200, -300) / 300) * 25000;
+        description = 'Below-average lot';
+    } else {
+        // Typical lot: proportional adjustment -$25k to +$50k
+        adjustment = (lotDifference / 200) * 37500;
+        description = 'Typical lot size';
+    }
+    
+    // Calculate base land value for target property
+    const baseLandValue = estimateBaseLandValue(targetLotSQFT);
+    
+    return {
+        adjustment: Math.round(adjustment),
+        typical: typicalLotSize,
+        difference: lotDifference,
+        description: description,
+        baseLandValue: Math.round(baseLandValue)
+    };
+}
+
+// Calculate width premium (wider properties are more valuable)
+function calculateWidthPremium(targetWidth, compWidths) {
+    if (!compWidths || compWidths.length === 0) {
+        return { premium: 0, typical: 0, difference: 0, description: 'No data' };
+    }
+    
+    // Calculate typical (median) width from comps
+    const typicalWidth = calculateMedian(compWidths);
+    const widthDifference = targetWidth - typicalWidth;
+    
+    let premium = 0;
+    let description = '';
+    
+    if (widthDifference > 2) {
+        // Wide premium: ~$30k-$50k per foot over 2 feet
+        premium = widthDifference * 40000;
+        description = 'Wide brownstone premium';
+    } else if (widthDifference > 0.5) {
+        // Modest premium: ~$20k-$30k per foot
+        premium = widthDifference * 25000;
+        description = 'Above-average width';
+    } else if (widthDifference < -1) {
+        // Narrow penalty: ~$15k-$25k per foot
+        premium = widthDifference * 20000;
+        description = 'Narrow property discount';
+    } else {
+        premium = 0;
+        description = 'Typical width';
+    }
+    
+    return {
+        premium: Math.round(premium),
+        typical: typicalWidth,
+        difference: widthDifference,
+        description: description
+    };
+}
+
 // Calculate and render estimates
 function calculateAndRenderEstimates() {
     const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
 
     let avgBuildingPriceSQFT = 0;
     let avgTotalPriceSQFT = 0;
+    let avgBuildingOnlyPriceSQFT = 0; // Building-only (land value extracted)
 
     let medianBuildingPriceSQFT = 0;
     let medianTotalPriceSQFT = 0;
+    let medianBuildingOnlyPriceSQFT = 0; // Building-only (land value extracted)
     let stdDevBuildingPriceSQFT = 0;
     let stdDevTotalPriceSQFT = 0;
+    let stdDevBuildingOnlyPriceSQFT = 0;
 
     if (included.length > 0) {
         // Extract values for median and std dev calculations
         const buildingPrices = included.map(p => p.buildingPriceSQFT);
         const totalPrices = included.map(p => p.totalPriceSQFT);
+        
+        // Calculate building-only prices (with land value extracted from each comp)
+        const buildingOnlyPrices = included.map(p => 
+            calculateBuildingOnlyPriceSQFT(p.adjustedSalePrice, p.buildingSQFT, p.propertySQFT)
+        );
 
         if (weightingMethod === 'price') {
             // Price-weighted average
@@ -1054,18 +1165,63 @@ function calculateAndRenderEstimates() {
             avgBuildingPriceSQFT = included.reduce((sum, p) => sum + p.buildingPriceSQFT, 0) / included.length;
             avgTotalPriceSQFT = included.reduce((sum, p) => sum + p.totalPriceSQFT, 0) / included.length;
         }
+        
+        // Calculate simple average for building-only prices
+        avgBuildingOnlyPriceSQFT = buildingOnlyPrices.reduce((sum, v) => sum + v, 0) / buildingOnlyPrices.length;
 
         // Calculate median and standard deviation
         medianBuildingPriceSQFT = calculateMedian(buildingPrices);
         medianTotalPriceSQFT = calculateMedian(totalPrices);
+        medianBuildingOnlyPriceSQFT = calculateMedian(buildingOnlyPrices);
         stdDevBuildingPriceSQFT = calculateStdDev(buildingPrices, avgBuildingPriceSQFT);
         stdDevTotalPriceSQFT = calculateStdDev(totalPrices, avgTotalPriceSQFT);
+        stdDevBuildingOnlyPriceSQFT = calculateStdDev(buildingOnlyPrices, avgBuildingOnlyPriceSQFT);
     }
 
-    // Calculate target's building SQFT using Floors (for Method A)
+    // ===== NYC APPRAISAL METHOD: Building Interior SQFT × $/SQFT + Qualitative Adjustments =====
+    
+    // Calculate target's building SQFT using Floors (PRIMARY METHOD)
     const targetBuildingSQFTWithFloors = targetProperty.buildingSQFT;
-
-    // Method A: Building SQFT (with Floors) × Average Building $ SQFT (PRIMARY)
+    
+    // Calculate qualitative adjustments
+    const compLotSizes = included.map(p => p.propertySQFT);
+    const compWidths = included.map(p => p.buildingWidthFeet);
+    
+    const landAdj = calculateLandAdjustment(targetProperty.propertySQFT, compLotSizes);
+    const widthAdj = calculateWidthPremium(targetProperty.buildingWidthFeet, compWidths);
+    
+    // Building-Only Base Value (with land already extracted from comps)
+    const buildingOnlyValueWeighted = targetBuildingSQFTWithFloors * avgBuildingOnlyPriceSQFT;
+    const buildingOnlyValueMedian = targetBuildingSQFTWithFloors * medianBuildingOnlyPriceSQFT;
+    
+    // Add back estimated land value for target property
+    const targetBaseLandValue = landAdj.baseLandValue;
+    
+    // Base Value: Building-Only Value + Estimated Land Value
+    const baseValueWeighted = buildingOnlyValueWeighted + targetBaseLandValue;
+    const baseValueMedian = buildingOnlyValueMedian + targetBaseLandValue;
+    
+    // Block/location adjustment (placeholder - can be enhanced with block-specific data)
+    const blockAdjustment = 0; // TODO: Add block-by-block premium/discount data
+    
+    // Total qualitative adjustments (land difference, width, block)
+    const totalAdjustments = landAdj.adjustment + widthAdj.premium + blockAdjustment;
+    
+    // NYC Appraisal Method: Base Value + Qualitative Adjustments
+    const nycEstimateWeighted = baseValueWeighted + totalAdjustments;
+    const nycEstimateMedian = baseValueMedian + totalAdjustments;
+    
+    // Confidence intervals for NYC method (based on building-only SQFT variance + adjustment uncertainty)
+    const baseStdDev = stdDevBuildingOnlyPriceSQFT * targetBuildingSQFTWithFloors;
+    const adjustmentUncertainty = Math.abs(totalAdjustments) * 0.2; // 20% uncertainty on adjustments
+    const totalStdDev = baseStdDev + adjustmentUncertainty;
+    
+    const nycEstimateLow68 = nycEstimateMedian - totalStdDev;
+    const nycEstimateHigh68 = nycEstimateMedian + totalStdDev;
+    const nycEstimateLow95 = nycEstimateMedian - (2 * totalStdDev);
+    const nycEstimateHigh95 = nycEstimateMedian + (2 * totalStdDev);
+    
+    // Legacy Method A (building only, for comparison)
     const estimateA = targetBuildingSQFTWithFloors * avgBuildingPriceSQFT;
     const estimateAMedian = targetBuildingSQFTWithFloors * medianBuildingPriceSQFT;
     // 68% Confidence Interval (±1 std dev)
@@ -1231,9 +1387,71 @@ function calculateAndRenderEstimates() {
     const container = document.getElementById('estimates-container');
     container.innerHTML = `
         <div class="estimate-box primary">
-            <h4>Recommended Blended Estimate</h4>
+            <h4>🏆 NYC Appraisal Method</h4>
+            <div class="estimate-value">${formatCurrency(nycEstimateMedian)}</div>
+            <div class="estimate-formula">Industry-Standard: Building SQFT × $/SQFT + Land + Adjustments</div>
+            <div class="confidence-interval" style="margin-top: 15px; border-top: 1px solid #e0e0e0; padding-top: 10px;">
+                <div class="ci-row" style="font-weight: bold; color: #2c3e50;"><span class="ci-label">Building Value (Land Extracted)</span> <span class="ci-value">${formatCurrency(buildingOnlyValueMedian)}</span></div>
+                <div class="estimate-formula" style="font-size: 0.9em; color: #7f8c8d; margin-bottom: 5px;">
+                    ${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(medianBuildingOnlyPriceSQFT)}/SQFT (comps with land removed)
+                </div>
+                
+                <div class="ci-row" style="font-weight: 600; color: #3498db; margin-top: 8px;">
+                    <span class="ci-label">+ Estimated Land Value</span> 
+                    <span class="ci-value">+${formatCurrency(targetBaseLandValue)}</span>
+                </div>
+                <div class="estimate-formula" style="font-size: 0.85em; color: #7f8c8d; margin-left: 15px; margin-bottom: 5px;">
+                    ${formatNumber(targetProperty.propertySQFT, 0)} SQFT × $100/SQFT base land value
+                </div>
+                
+                <div class="ci-row" style="font-weight: bold; color: #2c3e50; border-top: 1px solid #e0e0e0; padding-top: 8px; margin-top: 8px;">
+                    <span class="ci-label">= Base Value (Building + Land)</span> 
+                    <span class="ci-value">${formatCurrency(baseValueMedian)}</span>
+                </div>
+                
+                <div class="ci-row" style="font-weight: 600; color: ${landAdj.adjustment >= 0 ? '#27ae60' : '#e74c3c'}; margin-top: 8px;">
+                    <span class="ci-label">+ Land Adjustment</span> 
+                    <span class="ci-value">${landAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(landAdj.adjustment)}</span>
+                </div>
+                <div class="estimate-formula" style="font-size: 0.85em; color: #7f8c8d; margin-left: 15px;">
+                    ${landAdj.description}: Target ${formatNumber(targetProperty.propertySQFT, 0)} SQFT vs typical ${formatNumber(landAdj.typical, 0)} SQFT (${landAdj.difference >= 0 ? '+' : ''}${formatNumber(landAdj.difference, 0)} SQFT)
+                </div>
+                
+                <div class="ci-row" style="font-weight: 600; color: ${widthAdj.premium >= 0 ? '#27ae60' : '#e74c3c'}; margin-top: 8px;">
+                    <span class="ci-label">+ Width Premium</span> 
+                    <span class="ci-value">${widthAdj.premium >= 0 ? '+' : ''}${formatCurrency(widthAdj.premium)}</span>
+                </div>
+                <div class="estimate-formula" style="font-size: 0.85em; color: #7f8c8d; margin-left: 15px;">
+                    ${widthAdj.description}: Target ${formatNumber(targetProperty.buildingWidthFeet, 1)}' vs typical ${formatNumber(widthAdj.typical, 1)}' (${widthAdj.difference >= 0 ? '+' : ''}${formatNumber(widthAdj.difference, 1)}')
+                </div>
+                
+                ${blockAdjustment !== 0 ? `
+                <div class="ci-row" style="font-weight: 600; color: ${blockAdjustment >= 0 ? '#27ae60' : '#e74c3c'}; margin-top: 8px;">
+                    <span class="ci-label">+ Block/Location</span> 
+                    <span class="ci-value">${blockAdjustment >= 0 ? '+' : ''}${formatCurrency(blockAdjustment)}</span>
+                </div>
+                ` : ''}
+                
+                <div style="border-top: 2px solid #3498db; margin: 12px 0; padding-top: 10px;">
+                    <div class="ci-row" style="font-weight: bold; font-size: 1.05em; color: #2c3e50;">
+                        <span class="ci-label">Total Adjustments:</span> 
+                        <span class="ci-value" style="color: ${totalAdjustments >= 0 ? '#27ae60' : '#e74c3c'};">${totalAdjustments >= 0 ? '+' : ''}${formatCurrency(totalAdjustments)}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="confidence-interval" style="margin-top: 10px;">
+                <div class="ci-row"><span class="ci-label">Weighted Average:</span> <span class="ci-value">${formatCurrency(nycEstimateWeighted)}</span></div>
+                <div class="estimate-formula" style="display: flex; justify-content: space-between;"><span>68% Confidence (±1σ):</span><span>${formatCurrency(nycEstimateLow68)} - ${formatCurrency(nycEstimateHigh68)}</span></div>
+                <div class="estimate-formula" style="display: flex; justify-content: space-between;"><span>95% Confidence (±2σ):</span><span>${formatCurrency(nycEstimateLow95)} - ${formatCurrency(nycEstimateHigh95)}</span></div>
+            </div>
+        </div>
+        
+        ${highInfluenceEstimateHTML}
+
+        <div class="estimate-box" style="opacity: 0.7;">
+            <h4>Legacy Blended Estimate</h4>
             <div class="estimate-value">${formatCurrency(blendedMedian)}</div>
-            <div class="estimate-formula">Median-Based (70% Method A + 30% Method B)</div>
+            <div class="estimate-formula">Old Method (70% Building + 30% Land+Building Blend)</div>
             <div class="confidence-interval">
                 <div class="ci-row"><span class="ci-label">Method A (Building-Based)</span> <span class="ci-value">${formatCurrency(estimateAMedian)}</span></div> 
                 <div class="estimate-formula">${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(medianBuildingPriceSQFT)} Building Median $ SQFT</div> 
@@ -1244,11 +1462,10 @@ function calculateAndRenderEstimates() {
             </div>
             <div class="confidence-interval">
                 <div class="ci-row"><span class="ci-label">Weighted Average:</span> <span class="ci-value">${formatCurrency(blendedEstimate)}</span></div>
-                <div class="estimate-formula" style= "display: flex; justify-content: space-between;"><span>68% Confidence (±1σ):</span><span>${formatCurrency(blendedLow68)} - ${formatCurrency(blendedHigh68)}</span></div>
-                <div class="estimate-formula" style= "display: flex; justify-content: space-between;"><span>95% Confidence (±2σ):</span><span>${formatCurrency(blendedLow95)} - ${formatCurrency(blendedHigh95)}</span></div>
+                <div class="estimate-formula" style="display: flex; justify-content: space-between;"><span>68% Confidence (±1σ):</span><span>${formatCurrency(blendedLow68)} - ${formatCurrency(blendedHigh68)}</span></div>
+                <div class="estimate-formula" style="display: flex; justify-content: space-between;"><span>95% Confidence (±2σ):</span><span>${formatCurrency(blendedLow95)} - ${formatCurrency(blendedHigh95)}</span></div>
             </div>
         </div>
-        ${highInfluenceEstimateHTML}
     `;
 
     // Get selected direct comp
@@ -1288,11 +1505,11 @@ function calculateAndRenderEstimates() {
             <div class="estimate-value">${formatCurrency(directCompEstimate)}</div>
             <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompBuildingPriceSQFT) + ' × (' + targetProperty.floors + ' floors × ' + formatNumber(targetProperty.buildingWidthFeet, 2) + ' × ' + formatNumber(targetProperty.buildingDepthFeet, 2) + ')' : 'No comp selected'}</div>
         </div>
-        <div class="estimate-box minimized">
+        <!-- <div class="estimate-box minimized">
             <h4>Direct Comp Total-Based</h4>
             <div class="estimate-value">${formatCurrency(directCompTotalEstimate)}</div>
             <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompTotalPriceSQFT) + ' × ' + formatNumber(directCompTargetTotalSQFT, 2) + ' SQFT' : 'No comp selected'}</div>
-        </div>
+        </div> -->
     `;
 
     calculateAndRenderAverages();
