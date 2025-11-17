@@ -53,6 +53,44 @@ function formatCurrency(value) {
     return '$' + value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * Parse MM/DD/YYYY or MM/DD/YY date format used in ACRIS data
+ * @param {string} dateString - Date in MM/DD/YYYY or MM/DD/YY format
+ * @returns {Date|null} - Parsed Date object or null if invalid
+ */
+function parseACRISDate(dateString) {
+    if (!dateString || dateString === 'N/A') return null;
+    
+    const dateParts = dateString.split('/');
+    if (dateParts.length !== 3) return null;
+    
+    const month = parseInt(dateParts[0]);
+    const day = parseInt(dateParts[1]);
+    let year = parseInt(dateParts[2]);
+    
+    // Handle 2-digit years: 00-49 = 2000-2049, 50-99 = 1950-1999
+    if (year < 100) {
+        year += year < 50 ? 2000 : 1900;
+    }
+    
+    // Validate date components
+    if (isNaN(month) || isNaN(day) || isNaN(year)) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    
+    return new Date(year, month - 1, day);
+}
+
+/**
+ * Calculate days between two dates
+ * @param {Date} fromDate - Earlier date
+ * @param {Date} toDate - Later date (default: today)
+ * @returns {number} - Number of days difference
+ */
+function daysBetween(fromDate, toDate = new Date()) {
+    if (!fromDate || !toDate) return 0;
+    return (toDate - fromDate) / (1000 * 60 * 60 * 24);
+}
+
 // Utility function to format number
 function formatNumber(value, decimals = 2) {
     if (!value) return '0';
@@ -120,8 +158,8 @@ function applyAppreciationAdjustment(salePrice, sellDate) {
     }
 
     // Parse date (format: MM/DD/YYYY or MM/DD/YY)
-    const dateParts = sellDate.split('/');
-    if (dateParts.length !== 3) {
+    const saleDate = parseACRISDate(sellDate);
+    if (!saleDate) {
         return { 
             adjustedPrice: salePrice, 
             adjustedPriceLow: salePrice,
@@ -133,15 +171,8 @@ function applyAppreciationAdjustment(salePrice, sellDate) {
         };
     }
 
-    let year = parseInt(dateParts[2]);
-    // Handle 2-digit years: 00-49 = 2000-2049, 50-99 = 1950-1999
-    if (year < 100) {
-        year += year < 50 ? 2000 : 1900;
-    }
-
-    const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
     const today = new Date();
-    const yearsAgo = (today - saleDate) / (1000 * 60 * 60 * 24 * 365.25);
+    const yearsAgo = daysBetween(saleDate, today) / 365.25;
     const monthsAgo = yearsAgo * 12;
 
     // Method 1: Recent sales (< 6 months) - No adjustment needed
@@ -473,20 +504,12 @@ function renderComparables() {
     // Calculate date-based weights (more recent sales get higher weight)
     const dateWeights = included.map(p => {
         // Parse date (format: MM/DD/YYYY or MM/DD/YY)
-        if (p.sellDate === 'N/A' || !p.sellDate) {
-            // Penalize unconfirmed sales - give them 10% of base weight
+        const saleDate = parseACRISDate(p.sellDate);
+        if (!saleDate) {
+            // Penalize unconfirmed/invalid sales - give them 10% of base weight
             return 0.1;
         }
-        const dateParts = p.sellDate.split('/');
-        if (dateParts.length !== 3) return 0.1; // Also penalize invalid dates
-        let year = parseInt(dateParts[2]);
-        // Handle 2-digit years: 00-49 = 2000-2049, 50-99 = 1950-1999
-        if (year < 100) {
-            year += year < 50 ? 2000 : 1900;
-        }
-        const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-        const today = new Date();
-        const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+        const daysSinceSale = daysBetween(saleDate);
         // Use exponential decay: more recent = higher weight
         // Half-life of ~365 days (sales from 1 year ago have half the weight)
         return Math.exp(-daysSinceSale / 525);
@@ -905,18 +928,11 @@ function calculateAndRenderAverages() {
         } else if (weightingMethod === 'date') {
             // Date-based weighted average (more recent sales weighted higher)
             const weights = included.map(p => {
-                if (p.sellDate === 'N/A' || !p.sellDate) {
-                    return 0.1; // Penalize unconfirmed sales
+                const saleDate = parseACRISDate(p.sellDate);
+                if (!saleDate) {
+                    return 0.1; // Penalize unconfirmed/invalid sales
                 }
-                const dateParts = p.sellDate.split('/');
-                if (dateParts.length !== 3) return 0.1;
-                let year = parseInt(dateParts[2]);
-                if (year < 100) {
-                    year += year < 50 ? 2000 : 1900;
-                }
-                const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-                const today = new Date();
-                const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
+                const daysSinceSale = daysBetween(saleDate);
                 return Math.exp(-daysSinceSale / 525);
             });
             const totalWeight = weights.reduce((sum, w) => sum + w, 0);
