@@ -61,7 +61,17 @@ const WEIGHTING_CONSTANTS = {
     ADJUSTMENT_RENOVATION_DISCOUNT: 0.10,      // -10% if comp is non-renovated vs renovated target
     ADJUSTMENT_LOT_PER_500SQFT: 0.01,         // ±1% per 500 SQFT lot size difference
     ADJUSTMENT_WIDTH_PER_FOOT: 0.015,         // ±1.5% per foot of width difference
-    ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM: 0.05 // +5% if comp has original details vs target without
+    ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM: 0.05, // +5% if comp has original details vs target without
+    
+    // Similarity score weighting factors (lower score = better match)
+    // These determine how much each factor contributes to the overall similarity score
+    SIMILARITY_ADJUSTMENT_WEIGHT: 3.0,        // CMA adjustment % is most important
+    SIMILARITY_SIZE_WEIGHT: 1.5,              // Building size difference weight
+    SIMILARITY_LOT_WEIGHT: 1.0,               // Lot size difference weight
+    SIMILARITY_WIDTH_WEIGHT: 2.0,             // Width difference weight (per foot)
+    SIMILARITY_DATE_WEIGHT: 0.5,              // Date recency weight (per year)
+    SIMILARITY_RENOVATION_MISMATCH: 5.0,      // Renovation status mismatch penalty
+    SIMILARITY_ORIGINAL_DETAILS_MISMATCH: 3.0 // Original details mismatch penalty
 };
 
 // Map-related globals
@@ -321,6 +331,94 @@ function calculatePropertyAdjustments(comp, target) {
         adjustmentFactor,
         breakdown,
         totalAdjustmentPercent: (adjustmentFactor - 1.0) * 100
+    };
+}
+
+/**
+ * Calculate similarity score for a comparable property
+ * Lower score = better match to target property
+ * Combines CMA adjustments with property characteristic differences
+ * @param {Object} comp - Comparable property object
+ * @param {Object} target - Target property object
+ * @returns {Object} - { score: number, breakdown: object, rating: string }
+ */
+function calculateSimilarityScore(comp, target) {
+    let score = 0;
+    const breakdown = {};
+    
+    // 1. CMA Adjustment component (most important - typically 0-30 points)
+    const adjustment = calculatePropertyAdjustments(comp, target);
+    const adjustmentPoints = Math.abs(adjustment.totalAdjustmentPercent) * WEIGHTING_CONSTANTS.SIMILARITY_ADJUSTMENT_WEIGHT;
+    breakdown.adjustment = adjustmentPoints;
+    score += adjustmentPoints;
+    
+    // 2. Building size difference (typically 0-15 points)
+    if (comp.buildingSQFT && target.buildingSQFT) {
+        const sizeDiffPercent = Math.abs(comp.buildingSQFT - target.buildingSQFT) / target.buildingSQFT * 100;
+        const sizePoints = sizeDiffPercent * WEIGHTING_CONSTANTS.SIMILARITY_SIZE_WEIGHT;
+        breakdown.size = sizePoints;
+        score += sizePoints;
+    }
+    
+    // 3. Lot size difference (typically 0-10 points)
+    if (comp.propertySQFT && target.propertySQFT) {
+        const lotDiffPercent = Math.abs(comp.propertySQFT - target.propertySQFT) / target.propertySQFT * 100;
+        const lotPoints = lotDiffPercent * WEIGHTING_CONSTANTS.SIMILARITY_LOT_WEIGHT;
+        breakdown.lot = lotPoints;
+        score += lotPoints;
+    }
+    
+    // 4. Width difference (typically 0-10 points)
+    if (comp.buildingWidthFeet && target.buildingWidthFeet) {
+        const widthDiff = Math.abs(comp.buildingWidthFeet - target.buildingWidthFeet);
+        const widthPoints = widthDiff * WEIGHTING_CONSTANTS.SIMILARITY_WIDTH_WEIGHT;
+        breakdown.width = widthPoints;
+        score += widthPoints;
+    }
+    
+    // 5. Sale date recency (typically 0-5 points)
+    const saleDate = parseACRISDate(comp.sellDate);
+    if (saleDate) {
+        const yearsAgo = daysBetween(saleDate) / 365.25;
+        const datePoints = yearsAgo * WEIGHTING_CONSTANTS.SIMILARITY_DATE_WEIGHT;
+        breakdown.date = datePoints;
+        score += datePoints;
+    } else {
+        breakdown.date = 5.0; // Penalty for missing date
+        score += 5.0;
+    }
+    
+    // 6. Renovation status mismatch (0 or 5 points)
+    if (comp.renovated && target.renovated) {
+        if (comp.renovated !== target.renovated) {
+            breakdown.renovation = WEIGHTING_CONSTANTS.SIMILARITY_RENOVATION_MISMATCH;
+            score += WEIGHTING_CONSTANTS.SIMILARITY_RENOVATION_MISMATCH;
+        } else {
+            breakdown.renovation = 0;
+        }
+    }
+    
+    // 7. Original details mismatch (0 or 3 points)
+    if (comp.originalDetails && target.originalDetails) {
+        if (comp.originalDetails !== target.originalDetails) {
+            breakdown.originalDetails = WEIGHTING_CONSTANTS.SIMILARITY_ORIGINAL_DETAILS_MISMATCH;
+            score += WEIGHTING_CONSTANTS.SIMILARITY_ORIGINAL_DETAILS_MISMATCH;
+        } else {
+            breakdown.originalDetails = 0;
+        }
+    }
+    
+    // Determine rating based on score
+    let rating = 'Fair';
+    if (score < 10) rating = 'Excellent';
+    else if (score < 20) rating = 'Good';
+    else if (score < 35) rating = 'Fair';
+    else rating = 'Poor';
+    
+    return {
+        score: Math.round(score * 10) / 10, // Round to 1 decimal
+        breakdown,
+        rating
     };
 }
 
@@ -990,7 +1088,8 @@ function renderComparables() {
                 <td>-</td>
                 <td class="adjustment-cell">-</td>
                 <td class="weight-cell" style="${weightingMethod === 'simple' ? 'display: none;' : ''}">-</td>
-                <td>-</td>
+                <td class="similarity-cell">-</td>
+                <td>${prop.sellDate}</td>
                 <td>${prop.taxClass}</td>
                 <td>${prop.occupancy}</td>
             `;
@@ -1012,6 +1111,11 @@ function renderComparables() {
         }
         const isHighInfluence = weightPercent > (100 / included.length) * WEIGHTING_CONSTANTS.HIGH_INFLUENCE_MULTIPLIER;
 
+        // Calculate similarity score
+        const similarity = prop.included ? calculateSimilarityScore(prop, targetProperty) : null;
+        const isBestMatch = similarity && similarity.score < 10;
+        const isGoodMatch = similarity && similarity.score >= 10 && similarity.score < 20;
+
         // Check if this is the direct comp
         if (prop.isDirectComp) {
             row.classList.add('highlighted');
@@ -1029,6 +1133,11 @@ function renderComparables() {
         // Add outlier class if flagged
         if (prop.isOutlier) {
             row.classList.add('outlier');
+        }
+        
+        // Add best-match class if applicable
+        if (isBestMatch) {
+            row.classList.add('best-match');
         }
 
         // Calculate property adjustment for this comp
@@ -1050,6 +1159,37 @@ function renderComparables() {
         const weightCell = weightingMethod !== 'simple' ?
             `<td class="weight-cell">${prop.included ? formatNumber(weightPercent, 1) + '%' : '-'}</td>` :
             '<td class="weight-cell" style="display: none;">-</td>';
+
+        // Build similarity cell with color coding and tooltip
+        let similarityCell;
+        if (similarity) {
+            const score = similarity.score;
+            const rating = similarity.rating;
+            const breakdown = similarity.breakdown;
+            
+            // Color coding based on rating
+            let color = '#666';
+            if (rating === 'Excellent') color = '#27ae60'; // Green
+            else if (rating === 'Good') color = '#f39c12'; // Orange
+            else if (rating === 'Fair') color = '#e67e22'; // Dark orange
+            else if (rating === 'Poor') color = '#e74c3c'; // Red
+            
+            // Build tooltip showing breakdown
+            const similarityTooltip = `Similarity: ${score.toFixed(1)} (${rating})\n` +
+                `Adjustment: ${(breakdown.adjustment || 0).toFixed(1)}\n` +
+                `Building Diff: ${(breakdown.size || 0).toFixed(1)}\n` +
+                `Lot Diff: ${(breakdown.lot || 0).toFixed(1)}\n` +
+                `Width Diff: ${(breakdown.width || 0).toFixed(1)}\n` +
+                `Date: ${(breakdown.date || 0).toFixed(1)}\n` +
+                `Renovation: ${(breakdown.renovation || 0).toFixed(1)}\n` +
+                `Details: ${(breakdown.originalDetails || 0).toFixed(1)}`;
+            
+            const bestMatchBadge = isBestMatch ? '<span class="badge badge-best-match" style="margin-left: 4px;">★</span>' : '';
+            
+            similarityCell = `<td class="similarity-cell" title="${similarityTooltip}" style="color: ${color}; font-weight: ${score < 20 ? '600' : '400'};">${score.toFixed(1)}${bestMatchBadge}</td>`;
+        } else {
+            similarityCell = '<td class="similarity-cell">-</td>';
+        }
 
         row.innerHTML = `
                     <td class="checkbox-cell">
@@ -1078,6 +1218,7 @@ function renderComparables() {
                     </td>
                     ${adjustmentCell}
                     ${weightCell}
+                    ${similarityCell}
                     <td>${prop.sellDate}</td>
                     <td>${prop.taxClass}</td>
                     <td>${prop.occupancy}</td>
@@ -1139,7 +1280,31 @@ function sortPropertiesByColumn(properties, columnIndex, direction) {
                 aVal = a.adjustedSalePrice || 0;
                 bVal = b.adjustedSalePrice || 0;
                 break;
-            case 14: // Sale Date
+            case 13: // Adjustment %
+                if (!a.isTarget && !b.isTarget) {
+                    const targetProp = properties.find(p => p.isTarget);
+                    aVal = a.included ? calculatePropertyAdjustments(a, targetProp).totalAdjustmentPercent : 999;
+                    bVal = b.included ? calculatePropertyAdjustments(b, targetProp).totalAdjustmentPercent : 999;
+                } else {
+                    aVal = a.isTarget ? -999 : 999;
+                    bVal = b.isTarget ? -999 : 999;
+                }
+                break;
+            case 14: // Weight %
+                aVal = a.weight || 0;
+                bVal = b.weight || 0;
+                break;
+            case 15: // Similarity
+                if (!a.isTarget && !b.isTarget) {
+                    const targetProp = properties.find(p => p.isTarget);
+                    aVal = a.included ? calculateSimilarityScore(a, targetProp).score : 999;
+                    bVal = b.included ? calculateSimilarityScore(b, targetProp).score : 999;
+                } else {
+                    aVal = a.isTarget ? 999 : 999;
+                    bVal = b.isTarget ? 999 : 999;
+                }
+                break;
+            case 16: // Sale Date
                 aVal = a.sellDate;
                 bVal = b.sellDate;
                 // Parse dates for comparison
@@ -1158,11 +1323,11 @@ function sortPropertiesByColumn(properties, columnIndex, direction) {
                     bVal = new Date(bYear, parseInt(bParts[0]) - 1, parseInt(bParts[1]));
                 }
                 return direction === 'asc' ? aVal - bVal : bVal - aVal;
-            case 15: // Tax Class
+            case 17: // Tax Class
                 aVal = String(a.taxClass);
                 bVal = String(b.taxClass);
                 return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-            case 16: // Occupancy
+            case 18: // Occupancy
                 aVal = a.occupancy;
                 bVal = b.occupancy;
                 return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
