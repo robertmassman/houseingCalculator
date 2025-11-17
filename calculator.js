@@ -1975,98 +1975,13 @@ function updateMapMarkers() {
 function updateMapHeatmap() {
     const heatData = [];
 
-    // Calculate weights for all included properties (same logic as renderComparables)
+    // Calculate weights for all included properties using centralized utility function
     const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0 && p.coordinates);
 
     if (included.length === 0) return; // No data to display
 
-    const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
-    const targetSize = targetProperty.buildingSQFT;
-    const targetTotalSize = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
-
-    // Calculate all weight arrays based on current weighting method
-    let weights = [];
-
-    if (weightingMethod === 'simple') {
-        // Simple average - equal weights
-        weights = included.map(() => 100 / included.length);
-    } else if (weightingMethod === 'price') {
-        // Price-weighted
-        weights = included.map(p => (p.adjustedSalePrice / totalPrice) * 100);
-    } else if (weightingMethod === 'size') {
-        // Size-similarity weighted
-        const sizeWeights = included.map(p => {
-            const compSize = p.buildingSQFT;
-            const sizeDiff = Math.abs(compSize - targetSize);
-            return 1 / (1 + sizeDiff / targetSize);
-        });
-        const totalSizeWeight = sizeWeights.reduce((sum, w) => sum + w, 0);
-        weights = sizeWeights.map(w => (w / totalSizeWeight) * 100);
-    } else if (weightingMethod === 'total-size') {
-        // Total property size weighted
-        const totalSizeWeights = included.map(p => {
-            const compTotalSize = calculateTotalPropertySQFT(p.propertySQFT, p.buildingSQFT, p.buildingWidthFeet, p.buildingDepthFeet);
-            const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
-            return 1 / (1 + totalSizeDiff / targetTotalSize);
-        });
-        const totalPropertySizeWeight = totalSizeWeights.reduce((sum, w) => sum + w, 0);
-        weights = totalSizeWeights.map(w => (w / totalPropertySizeWeight) * 100);
-    } else if (weightingMethod === 'date') {
-        // Date-based weighted
-        const dateWeights = included.map(p => {
-            const saleDate = parseACRISDate(p.sellDate);
-            if (!saleDate) return 0.1;
-            const daysSinceSale = daysBetween(saleDate);
-            return Math.exp(-daysSinceSale / 525);
-        });
-        const totalDateWeight = dateWeights.reduce((sum, w) => sum + w, 0);
-        weights = dateWeights.map(w => (w / totalDateWeight) * 100);
-    } else if (weightingMethod === 'renovated') {
-        // Renovated-based weighted
-        const renovatedWeights = included.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
-        const totalRenovatedWeight = renovatedWeights.reduce((sum, w) => sum + w, 0);
-        weights = renovatedWeights.map(w => (w / totalRenovatedWeight) * 100);
-    } else if (weightingMethod === 'combined') {
-        // Combined weighted (renovated + originalDetails)
-        const combinedWeights = included.map(p => {
-            let weight = 1.0;
-            if (targetProperty.renovated === p.renovated) weight *= 3.0;
-            if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
-            return weight;
-        });
-        const totalCombinedWeight = combinedWeights.reduce((sum, w) => sum + w, 0);
-        weights = combinedWeights.map(w => (w / totalCombinedWeight) * 100);
-    } else if (weightingMethod === 'all-weighted') {
-        // All-weighted blend (combines all factors)
-        const allWeights = included.map((p, index) => {
-            let weight = 1.0;
-
-            // Price component
-            if (totalPrice > 0) weight *= (p.adjustedSalePrice / totalPrice) * included.length;
-
-            // Size similarity component
-            const compSize = p.buildingSQFT;
-            const sizeDiff = Math.abs(compSize - targetSize);
-            const sizeWeight = 1 / (1 + sizeDiff / targetSize);
-            weight *= sizeWeight * included.length;
-
-            // Date recency component
-            const saleDate = parseACRISDate(p.sellDate);
-            if (saleDate) {
-                const daysSinceSale = daysBetween(saleDate);
-                const dateWeight = Math.exp(-daysSinceSale / 525);
-                weight *= dateWeight * included.length;
-            }
-
-            // Qualitative matches
-            if (p.renovated === targetProperty.renovated) weight *= 1.5;
-            if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
-
-            return weight;
-        });
-        const totalAllWeight = allWeights.reduce((sum, w) => sum + w, 0);
-        weights = allWeights.map(w => (w / totalAllWeight) * 100);
-    }
+    // Calculate weights using centralized utility function
+    const weights = calculatePropertyWeights(included, targetProperty, weightingMethod);
 
     // Use weights as heatmap intensity - create ultra-dense grid for ultra-smooth gradient diffusion
     included.forEach((prop, index) => {
