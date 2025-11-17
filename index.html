@@ -93,110 +93,40 @@
                         <th class="checkbox-cell">Include</th>
                         <th class="checkbox-cell">Direct<br>Comp</th>
                         <th>Address</th>
-                        <th>Renovated</th>
-                        <th>Original Details</th>
-                        <th>Property SQFT</th>
-                        <th>Building Width</th>
-                        <th>Building Depth</th>
-                        <th>Floors</th>
-                        <th>Building SQFT</th>
-                        <th>Building $ SQFT</th>
-                        <th>Total $ SQFT</th>
+                        <th>Reno</th>
+                        <th>Lot<br> (W×D)</th>
+                        <th>Building<br>(W×D×Fl)</th>
+                        <th>Building<br> SQFT</th>
+                        <th title="Price per square foot (building basis). Hover for total property $/SQFT">$/SQFT</th>
                         <th>Sale Price</th>
                         <th class="adjustment-header" title="CMA adjustment factor applied to comparable based on differences from target (size, renovation, lot, width, details)">Adjustment</th>
                         <th id="weight-header">Weight %</th>
-                        <th class="distance-header" title="Distance to nearest key location (Nostrand Ave A/C station or Franklin & Dean commercial area)">Distance</th>
                         <th class="similarity-header" title="Similarity score: lower is better. Combines adjustment, size, lot, width, date, and characteristic differences. < 10 = Excellent, < 20 = Good, < 35 = Fair">Similarity</th>
-                        <th>Sale Date</th>
-                        <th>Tax Class</th>
-                        <th>Occupancy</th>
                     </tr>
                 </thead>
                 <tbody id="comps-tbody"></tbody>
             </table>
         </div>
         
-        <!-- Appreciation Methodology Info -->
-        <div class="info-section" style="background: #e8f5e9; padding: 15px; border-radius: 6px; margin: 40px 0 20px 0; border-left: 4px solid #4caf50;">
-            <h3 style="margin: 0 0 10px 0; color: #2e7d32; font-size: 16px;">📊 Market-Based Appreciation Methodology</h3>
-            <div style="color: #33691e; font-size: 13px; line-height: 1.7;">
-                <p style="margin: 0 0 12px 0;"><strong>Industry-Standard Approach:</strong> This calculator uses actual Crown Heights historical appreciation data (2019-2025) rather than a simple compound formula. Sale prices are adjusted based on when the property was sold.</p>
-                
-                <p style="margin: 0 0 12px 0;"><strong>Three Methods Applied:</strong></p>
-                <ul style="margin: 0 0 12px 20px; line-height: 1.8;">
-                    <li><strong>Recent Sales (&lt; 6 months):</strong> No adjustment needed</li>
-                    <li><strong>Short-term (&lt; 2 years):</strong> Linear appreciation using actual annual rates</li>
-                    <li><strong>Long-term (2+ years):</strong> Year-by-year compounding with historical data</li>
-                </ul>
-                
-                <p style="margin: 0 0 12px 0;"><strong>Confidence Intervals:</strong> Each adjusted price includes an uncertainty range (±%) reflecting market volatility. This acknowledges that appreciation estimates contain inherent uncertainty, especially for older sales.</p>
-                
-                <p style="margin: 0; font-style: italic; font-size: 12px;"><strong>Data Sources:</strong> Zillow Home Value Index (ZHVI), StreetEasy market reports, NYC Department of Finance sales data. Historical rates: 2019 (+4.5%), 2020 (+8.2%), 2021 (+12.8%), 2022 (+3.5%), 2023 (-1.8%), 2024 (+4.8%), 2025 (+4.2% est.)</p>
-            </div>
-        </div>
+        <!-- Methodology Info -->
+        <!-- <div class="info-section" style="background: #e8f5e9; padding: 12px; border-radius: 6px; margin: 30px 0 15px 0; border-left: 4px solid #4caf50;">
+            <h3 style="margin: 0 0 8px 0; color: #2e7d32; font-size: 15px;">📊 Appreciation Methodology</h3>
+            <p style="margin: 0; color: #33691e; font-size: 12px; line-height: 1.5;">Uses Crown Heights historical data (2019-2025) to adjust older sales. Recent sales (&lt;6mo): no adjustment. Short-term (&lt;2yr): linear. Long-term: year-by-year compounding. Sources: Zillow ZHVI, StreetEasy, NYC DOF.</p>
+        </div> -->
         
-        <!-- Blended Estimate Calibration Info -->
-        <div class="info-section" style="background: #e3f2fd; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #2196f3;">
-            <h3 style="margin: 0 0 10px 0; color: #1565c0; font-size: 16px;">🎯 Data-Calibrated Blended Estimate</h3>
-            <div style="color: #0d47a1; font-size: 13px; line-height: 1.7;">
-                <p style="margin: 0 0 12px 0;"><strong>Automatic Optimization:</strong> The calculator automatically determines the optimal building/land value split by analyzing your selected comparable properties. This is more accurate than using a fixed ratio.</p>
-                
-                <p style="margin: 0 0 12px 0;"><strong>Industry Standards for Urban Brooklyn Multi-Family:</strong></p>
-                <ul style="margin: 0 0 12px 20px; line-height: 1.8;">
-                    <li><strong>Building Value:</strong> 60-80% (improvements, structures, interior)</li>
-                    <li><strong>Land Value:</strong> 20-40% (lot size, location, development potential)</li>
-                </ul>
-                
-                <p style="margin: 0 0 12px 0;"><strong>How Calibration Works:</strong> The system tests different building/land splits (60/40 to 80/20) and selects the ratio that minimizes prediction error across your comparable properties using cross-validation. This ensures the blend reflects actual market behavior.</p>
-                
-                <p style="margin: 0 0 12px 0;"><strong>Why This Matters:</strong> Different neighborhoods and property types have different value distributions. Park Slope land might be worth 35% of total value, while East New York land might be 25%. Calibration adapts to your specific market data.</p>
-                
-                <p style="margin: 0; font-style: italic; font-size: 12px;"><strong>Display:</strong> The estimated value shows the calibrated split (e.g., "65% Building / 35% Land") along with the R² goodness-of-fit metric and sample size used for calibration.</p>
-            </div>
+        <!-- <div class="info-section" style="background: #e3f2fd; padding: 12px; border-radius: 6px; margin: 15px 0; border-left: 4px solid #2196f3;">
+            <h3 style="margin: 0 0 8px 0; color: #1565c0; font-size: 15px;">🎯 Calibrated Blending</h3>
+            <p style="margin: 0; color: #0d47a1; font-size: 12px; line-height: 1.5;">Automatically optimizes building/land split (60-80% / 20-40%) by testing ratios against your selected comparables to minimize prediction error.</p>
         </div>
-        
-        <!-- Bottom Disclaimer -->
-        <div class="disclaimer" style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 40px 0 20px 0; border-top: 3px solid #95a5a6;">
-            <h3 style="margin: 0 0 10px 0; color: #34495e; font-size: 16px;">Professional Standards & Limitations</h3>
-            <div style="color: #5a6a7a; font-size: 13px; line-height: 1.7;">
-                <p style="margin: 0 0 12px 0;"><strong>Data Sources & Accuracy:</strong> Comparable sales data is compiled from public records and may contain errors, omissions, or outdated information. Sale dates, prices, and property characteristics should be independently verified.</p>
-                
-                <p style="margin: 0 0 12px 0;"><strong>Statistical Methodology:</strong> This calculator uses weighted averaging and standard deviation analysis. Confidence intervals represent statistical probability ranges, not guaranteed value ranges. Market conditions can cause actual values to fall outside these ranges.</p>
-                
-                <p style="margin: 0 0 12px 0;"><strong>Adjustment Factors:</strong> Appreciation rates and renovation premiums are user-configurable estimates. Actual market appreciation and renovation values vary by property, neighborhood, and market cycle. These settings should be based on local market research.</p>
-                
-                <p style="margin: 0 0 12px 0;"><strong>What This Tool CANNOT Do:</strong> This calculator does not account for: property-specific condition issues, legal encumbrances, zoning restrictions, environmental hazards, market momentum, buyer financing terms, or negotiation factors. It does not replace on-site inspection or professional appraisal.</p>
-                
-                <p style="margin: 0 0 12px 0;"><strong>Professional Guidance Required For:</strong> Purchase/sale decisions, mortgage financing, legal disputes, estate planning, tax assessment challenges, investment analysis, or any situation requiring a legally defensible valuation.</p>
-                
-                <p style="margin: 0; font-weight: 500; color: #34495e;"><strong>This tool is for preliminary research and educational purposes only.</strong> The creators assume no liability for decisions made based on these estimates. Always engage licensed professionals for real estate transactions.</p>
-            </div>
-        </div>
-    </div>
+    </div> -->
 
-    <!-- Professional Disclaimer -->
-    <div class="disclaimer"
-        style="background: #fff3cd; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #f0ad4e;">
-        <strong style="color: #8a6d3b;">⚠️ IMPORTANT VALUATION DISCLAIMER:</strong>
-        <p style="margin: 10px 0 0 0; color: #6c5d3b; font-size: 14px; line-height: 1.6;">
-            This calculator provides <strong>preliminary estimates only</strong> based on comparable sales data. These
-            estimates are <strong>NOT</strong> professional appraisals and should not be used as the sole basis for
-            purchase, sale, or financing decisions. Actual market value may vary significantly based on:
+    <!-- Disclaimer -->
+    <!-- <div class="disclaimer" style="background: #fff3cd; padding: 12px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #f0ad4e;">
+        <strong style="color: #8a6d3b;">⚠️ DISCLAIMER:</strong>
+        <p style="margin: 8px 0 0 0; color: #6c5d3b; font-size: 12px; line-height: 1.5;">
+            <strong>Preliminary estimates only.</strong> Not professional appraisals. Data may contain errors. Does not account for property condition, market conditions, or unique features. For official valuations, consult a licensed appraiser, broker, or attorney. Use for research purposes only.
         </p>
-        <ul style="margin: 8px 0 8px 20px; color: #6c5d3b; font-size: 13px; line-height: 1.6;">
-            <li><strong>Property condition:</strong> Interior/exterior condition, recent improvements, deferred maintenance
-            </li>
-            <li><strong>Market conditions:</strong> Current demand, seasonal factors, economic trends</li>
-            <li><strong>Unique features:</strong> Views, location advantages, lot characteristics not captured in comps</li>
-            <li><strong>Comparables quality:</strong> Limited data, age of sales, differences in property characteristics
-            </li>
-            <li><strong>Timing factors:</strong> Days on market, motivated sellers/buyers, competitive offers</li>
-        </ul>
-        <p style="margin: 8px 0 0 0; color: #6c5d3b; font-size: 13px; font-weight: 500;">
-            <strong>For official valuations, financing, legal matters, or investment decisions, always consult a licensed
-                real estate appraiser, broker, or attorney.</strong>
-        </p>
-    </div>
+    </div>-->
 
     <footer style="text-align: center; padding: 30px 20px; color: #999; font-size: 13px; border-top: 1px solid #e0e0e0; margin-top: 40px;">
         <p>Built with assistance from <strong>GitHub Copilot</strong> (Claude Sonnet 4.5)</p>

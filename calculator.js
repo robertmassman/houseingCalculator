@@ -1045,69 +1045,22 @@ function loadData() {
 function renderTargetProperty() {
     if (!targetProperty) return;
 
-    //document.getElementById('target-address').textContent = targetProperty.address;
-
-    const fieldGroups = [
-        {
-            title: 'Property (feet)',
-            fields: [
-                { label: 'Width', value: formatNumber(targetProperty.propertyWidthFeet, 2) },
-                { label: 'Depth', value: formatNumber(targetProperty.propertyDepthFeet, 2) },
-                { label: 'SQFT', value: formatNumber(targetProperty.propertySQFT, 2) }
-            ]
-        },
-        {
-            title: 'Building (feet)',
-            fields: [
-                { label: 'Width', value: formatNumber(targetProperty.buildingWidthFeet, 2) },
-                { label: 'Depth', value: formatNumber(targetProperty.buildingDepthFeet, 2) },
-                { label: 'Floors', value: targetProperty.floors },
-                { label: 'SQFT', value: formatNumber(targetProperty.buildingSQFT, 2) },
-
-            ]
-        },
-        {
-            title: 'Property Details',
-            fields: [
-                { label: 'Renovated', value: targetProperty.renovated },
-                { label: 'Tax Class', value: targetProperty.taxClass },
-                { label: 'Occupancy', value: targetProperty.occupancy },
-                { label: 'Annual Taxes', value: formatCurrency(parseCurrency(targetProperty.taxes)) }
-            ]
-        }
-    ];
-
     const container = document.getElementById('target-property-fields');
-    container.innerHTML = '';
-
-    fieldGroups.forEach(group => {
-        const groupDiv = document.createElement('div');
-        groupDiv.className = 'property-field-group';
-
-        const groupTitle = document.createElement('div');
-        groupTitle.className = 'field-group-title';
-        groupTitle.textContent = group.title;
-        groupDiv.appendChild(groupTitle);
-
-        group.fields.forEach(field => {
-            const fieldDiv = document.createElement('div');
-            fieldDiv.className = 'property-field-item';
-
-            const label = document.createElement('span');
-            label.className = 'field-label';
-            label.textContent = field.label + ':';
-            fieldDiv.appendChild(label);
-
-            const value = document.createElement('span');
-            value.className = 'field-value';
-            value.textContent = field.value;
-            fieldDiv.appendChild(value);
-
-            groupDiv.appendChild(fieldDiv);
-        });
-
-        container.appendChild(groupDiv);
-    });
+    
+    // Create compact single-line format
+    const lotDims = `${formatNumber(targetProperty.propertyWidthFeet, 0)}' × ${formatNumber(targetProperty.propertyDepthFeet, 0)}'`;
+    const buildingDims = `${formatNumber(targetProperty.buildingWidthFeet, 0)}' × ${formatNumber(targetProperty.buildingDepthFeet, 0)}' × ${targetProperty.floors}fl`;
+    
+    container.innerHTML = `
+        <div style="display: flex; flex-wrap: wrap; gap: 20px; padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 13px;">
+            <div><strong>Lot:</strong> ${lotDims} (${formatNumber(targetProperty.propertySQFT, 0)} sqft)</div>
+            <div><strong>Building:</strong> ${buildingDims} (${formatNumber(targetProperty.buildingSQFT, 0)} sqft)</div>
+            <div><strong>Renovated:</strong> ${targetProperty.renovated}</div>
+            <div><strong>Tax Class:</strong> ${targetProperty.taxClass}</div>
+            <div><strong>Occupancy:</strong> ${targetProperty.occupancy}</div>
+            <div><strong>Annual Taxes:</strong> ${formatCurrency(parseCurrency(targetProperty.taxes))}</div>
+        </div>
+    `;
 }
 
 // Recalculate target property
@@ -1152,26 +1105,20 @@ function renderComparables() {
     
     const targetRow = document.createElement('tr');
     targetRow.classList.add('target-property-row');
+    const targetLotDimensions = `${formatNumber(targetForSort.propertyWidthFeet, 0)}'×${formatNumber(targetForSort.propertyDepthFeet, 0)}'`;
+    const targetBuildingDimensions = `${formatNumber(targetForSort.buildingWidthFeet, 0)}'×${formatNumber(targetForSort.buildingDepthFeet, 0)}'×${targetForSort.floors}fl`;
     targetRow.innerHTML = `
         <td class="checkbox-cell" colspan="2"><span class="badge badge-target">TARGET</span></td>
         <td><strong>${targetForSort.address}</strong></td>
         <td>${targetForSort.renovated}</td>
-        <td>${targetForSort.originalDetails || 'N/A'}</td>
-        <td>${formatNumber(targetForSort.propertySQFT, 2)}</td>
-        <td>${formatNumber(targetForSort.buildingWidthFeet, 2)}</td>
-        <td>${formatNumber(targetForSort.buildingDepthFeet, 2)}</td>
-        <td>${targetForSort.floors}</td>
+        <td>${targetLotDimensions}</td>
+        <td>${targetBuildingDimensions}</td>
         <td>${formatNumber(targetForSort.buildingSQFT, 2)}</td>
-        <td>-</td>
         <td>-</td>
         <td>-</td>
         <td class="adjustment-cell">-</td>
         <td class="weight-cell" style="${weightingMethod === 'simple' ? 'display: none;' : ''}">-</td>
-        <td class="distance-cell">${targetForSort.distanceToKeyLocation !== undefined ? formatNumber(targetForSort.distanceToKeyLocation, 2) + ' mi' : '-'}</td>
         <td class="similarity-cell">-</td>
-        <td>${targetForSort.sellDate}</td>
-        <td>${targetForSort.taxClass}</td>
-        <td>${targetForSort.occupancy}</td>
     `;
     tbody.appendChild(targetRow);
 
@@ -1276,6 +1223,23 @@ function renderComparables() {
             similarityCell = '<td class="similarity-cell">-</td>';
         }
 
+        // Build lot dimensions cell
+        const lotDimensionsCell = `${formatNumber(prop.propertyWidthFeet, 0)}'×${formatNumber(prop.propertyDepthFeet, 0)}'`;
+        
+        // Build building dimensions cell
+        const buildingDimensionsCell = `${formatNumber(prop.buildingWidthFeet, 0)}'×${formatNumber(prop.buildingDepthFeet, 0)}'×${prop.floors}fl`;
+        
+        // Build price/SQFT cell with tooltip showing total property $/SQFT
+        const priceSQFTTooltip = `Building: ${formatCurrency(prop.buildingPriceSQFT)}\\nTotal Property: ${formatCurrency(prop.totalPriceSQFT)}`;
+        const priceSQFTCell = `<td title="${priceSQFTTooltip}">${formatCurrency(prop.buildingPriceSQFT)}</td>`;
+        
+        // Build sale price cell with date and appreciation info in tooltip
+        const salePriceTooltip = prop.appreciationAmount > 1000 ? 
+            `Sale Date: ${prop.sellDate}\\nOriginal: ${formatCurrency(prop.originalSalePrice || prop.salePrice)}\\nAdjustment: +${formatCurrency(prop.appreciationAmount)} (±${(prop.appreciationUncertainty || 0).toFixed(1)}%)\\nMethod: ${prop.appreciationMethod || 'compound'}\\nRange: ${formatCurrency(prop.adjustedSalePriceLow || prop.adjustedSalePrice)} - ${formatCurrency(prop.adjustedSalePriceHigh || prop.adjustedSalePrice)}` :
+            `Sale Date: ${prop.sellDate}`;
+        const salePriceStyle = prop.appreciationAmount > 1000 ? 'color: #27ae60; font-weight: 500;' : '';
+        const salePriceCell = `<td><span style="${salePriceStyle}" title="${salePriceTooltip}">${formatCurrency(prop.adjustedSalePrice)}</span></td>`;
+
         row.innerHTML = `
                     <td class="checkbox-cell">
                         <input type="checkbox" ${prop.included ? 'checked' : ''} onchange="toggleComp(${prop.id})">
@@ -1291,24 +1255,14 @@ function renderComparables() {
                         ${prop.isOutlier && prop.included ? '<span class="badge badge-outlier" title="Statistical outlier - unusual price/SQFT">⚠️ Outlier</span>' : ''}
                     </td>
                     <td>${prop.renovated}</td>
-                    <td>${prop.originalDetails || 'N/A'}</td>
-                    <td>${formatNumber(prop.propertySQFT, 2)}</td>
-                    <td>${formatNumber(prop.buildingWidthFeet, 2)}</td>
-                    <td>${formatNumber(prop.buildingDepthFeet, 2)}</td>
-                    <td>${prop.floors}</td>
+                    <td>${lotDimensionsCell}</td>
+                    <td>${buildingDimensionsCell}</td>
                     <td>${formatNumber(prop.buildingSQFT, 2)}</td>
-                    <td>${formatCurrency(prop.buildingPriceSQFT)}</td>
-                    <td>${formatCurrency(prop.totalPriceSQFT)}</td>
-                    <td>
-                        <span style="${prop.appreciationAmount > 1000 ? 'color: #27ae60; font-weight: 500;' : ''}" title="${prop.appreciationAmount > 1000 ? 'Original: ' + formatCurrency(prop.originalSalePrice || prop.salePrice) + '\nAdjustment: +' + formatCurrency(prop.appreciationAmount) + ' (±' + (prop.appreciationUncertainty || 0).toFixed(1) + '%)\nMethod: ' + (prop.appreciationMethod || 'compound') + '\nRange: ' + formatCurrency(prop.adjustedSalePriceLow || prop.adjustedSalePrice) + ' - ' + formatCurrency(prop.adjustedSalePriceHigh || prop.adjustedSalePrice) : ''}">${formatCurrency(prop.adjustedSalePrice)}</span>
-                    </td>
+                    ${priceSQFTCell}
+                    ${salePriceCell}
                     ${adjustmentCell}
                     ${weightCell}
-                    <td class="distance-cell">${prop.distanceToKeyLocation !== undefined ? formatNumber(prop.distanceToKeyLocation, 2) + ' mi' : '-'}</td>
                     ${similarityCell}
-                    <td>${prop.sellDate}</td>
-                    <td>${prop.taxClass}</td>
-                    <td>${prop.occupancy}</td>
                 `;
         tbody.appendChild(row);
     });
@@ -2523,14 +2477,20 @@ function createPopupContent(prop, isTarget = false) {
     const badge = isTarget ? '<span class="popup-badge badge-target">TARGET</span>' :
         prop.isDirectComp ? '<span class="popup-badge badge-direct">DIRECT COMP</span>' : '';
 
+    // Build comprehensive field list including data removed from table
     const fields = [
         { label: 'Sale Price', value: formatCurrency(prop.adjustedSalePrice || prop.salePrice || 0) },
-        { label: 'Building $ SQFT', value: formatCurrency(prop.buildingPriceSQFT || 0) },
-        { label: 'Total $ SQFT', value: formatCurrency(prop.totalPriceSQFT || 0) },
+        { label: 'Sale Date', value: prop.sellDate || 'N/A' },
+        { label: 'Building $/SQFT', value: formatCurrency(prop.buildingPriceSQFT || 0) },
+        { label: 'Total $/SQFT', value: formatCurrency(prop.totalPriceSQFT || 0) },
         { label: 'Property SQFT', value: formatNumber(prop.propertySQFT, 0) },
         { label: 'Building SQFT', value: formatNumber(prop.buildingSQFT, 0) },
+        { label: 'Dimensions', value: `${formatNumber(prop.buildingWidthFeet, 0)}' × ${formatNumber(prop.buildingDepthFeet, 0)}' × ${prop.floors}fl` },
         { label: 'Renovated', value: prop.renovated },
-        { label: 'Tax Class', value: prop.taxClass }
+        { label: 'Original Details', value: prop.originalDetails || 'N/A' },
+        { label: 'Tax Class', value: prop.taxClass },
+        { label: 'Occupancy', value: prop.occupancy || 'N/A' },
+        { label: 'Distance to Transit', value: prop.distanceToKeyLocation !== undefined ? formatNumber(prop.distanceToKeyLocation, 2) + ' mi' : 'N/A' }
     ];
 
     let html = `<div class="popup-content">
