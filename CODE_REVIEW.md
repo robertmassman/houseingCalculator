@@ -12,7 +12,7 @@ This code review evaluates the accuracy of real estate calculations and identifi
 
 ### Critical Issues Found: 2 (✅ Both Resolved)
 ### Calculation Errors Found: 0 (✅ All Resolved)
-### Code Quality Issues: 4 (3 resolved, 1 remaining)
+### Code Quality Issues: 4 (✅ All Resolved)
 ### Recommendations: 12
 
 ---
@@ -527,36 +527,54 @@ return Math.exp(-daysSinceSale / WEIGHTING_CONSTANTS.DATE_WEIGHT_HALFLIFE_DAYS);
 
 ---
 
-### 14. **Exponential Price Transformation**
-**Location:** Line 2239, 2313  
-**Severity:** LOW - Lacks justification  
+### 14. **Exponential Price Transformation** ✅ RESOLVED
+**Location:** Lines 2333, 2450 in `calculator.js`  
+**Severity:** LOW - Map visualization scaling  
+**Status:** ✅ **COMPLETED**
 
-**Issue:**
+**Previous Issue:**
+Map visualizations used exponential scaling (squaring normalized values) which created non-linear emphasis:
+
 ```javascript
-const exponentialIntensity = Math.pow(normalizedIntensity, 2.0);
+// Old code - exponential scaling
 const exponentialPrice = Math.pow(normalizedPrice, 2.0);
+const exponentialIntensity = Math.pow(normalizedIntensity, 2.0);
 ```
 
-**Question:** Why square the normalized values? This creates non-linear scaling.
+**Problem:** 
+- Low-priced properties received disproportionately less visual weight
+- High-priced properties dominated visualization
+- Non-proportional representation of market values
 
-**Real Estate Impact:** 
-- Low-priced properties get disproportionately less weight
-- High-priced properties dominate visualization
-- May not reflect actual market dynamics
+**Example of Non-Linear Effect:**
+- Property A: $1M (normalized: 0.25) → squared: 0.0625 (6.25% visual weight)
+- Property B: $2M (normalized: 0.50) → squared: 0.25 (25% visual weight)
+- Property C: $3M (normalized: 0.75) → squared: 0.5625 (56.25% visual weight)
 
-**Example:**
-- Property A: $1M (normalized: 0.25) → squared: 0.0625 (6.25%)
-- Property B: $2M (normalized: 0.50) → squared: 0.25 (25%)
-- Property C: $3M (normalized: 0.75) → squared: 0.5625 (56.25%)
+**Resolution:**
+Replaced exponential scaling with linear scaling for proportional representation:
 
-**Recommendation:** Document reasoning or use linear scaling:
 ```javascript
-// Use linear scaling unless non-linear emphasis is intentional
-const intensity = normalizedIntensity; // Linear
-// OR document the exponential transform:
-// Square the value to emphasize higher-priced properties in visualization
-const intensity = Math.pow(normalizedIntensity, 2.0);
+// New code - linear scaling
+const normalizedPrice = priceRange > 0 ? (prop.adjustedSalePrice - minPrice) / priceRange : 0.5;
+// Using linear scaling for proportional representation
+const colorPosition = normalizedPrice; // 0 = red (cheap), 1 = green (expensive)
 ```
+
+**Benefits:**
+- ✅ **Proportional representation** - property values displayed in true proportion
+- ✅ **Fair visualization** - all price ranges get appropriate visual weight
+- ✅ **Accurate market view** - map reflects actual market distribution
+- ✅ **Applied to both modes** - blended heatmap and value zones
+
+**Impact on Visualizations:**
+1. **Blended Heatmap** (weight + value zones): Now shows proportional price distribution
+2. **Value Zones Only**: Properties colored proportionally to their actual prices
+
+**Example with Linear Scaling:**
+- Property A: $1M (normalized: 0.25) → 25% visual weight (proportional)
+- Property B: $2M (normalized: 0.50) → 50% visual weight (proportional)
+- Property C: $3M (normalized: 0.75) → 75% visual weight (proportional)
 
 ---
 
@@ -766,24 +784,23 @@ function calculateAVMEstimate(property, comps) {
 
 ### High Priority (Fix Immediately)
 1. ✅ **COMPLETED** - Fixed building SQFT calculation inconsistency (now uses `p.buildingSQFT` consistently)
-2. ⚠️ Clarify/fix `calculateTotalPropertySQFT` logic or rename function
-3. ⚠️ Create `parseACRISDate()` utility function (eliminates 6 duplications)
-4. ⚠️ Create `calculatePropertyWeights()` function (eliminates ~400 lines of duplication)
+2. ✅ **COMPLETED** - Created `parseACRISDate()` utility function (eliminated 8+ duplications)
+3. ✅ **COMPLETED** - Created `calculatePropertyWeights()` function (eliminated ~400 lines of duplication)
 
 ### Medium Priority (Recommended)
-5. ✅ Create `calculateSizeSimilarityWeight()` utility
-6. ✅ Define constants for magic numbers
+5. ✅ **COMPLETED** - Created `calculateSizeSimilarityWeight()` utility (part of Issue #11)
+6. ✅ **COMPLETED** - Defined constants for magic numbers (WEIGHTING_CONSTANTS object)
 7. ✅ **COMPLETED** - Market-specific appreciation data implemented (see `APPRECIATION_UPGRADE.md`)
-8. ✅ Change standard deviation to use sample (N-1) instead of population (N)
-9. ✅ Add property data validation
-10. ✅ Add outlier detection for comps
+8. ⚠️ Change standard deviation to use sample (N-1) instead of population (N)
+9. ⚠️ Add property data validation
+10. ⚠️ Add outlier detection for comps
 
 ### Low Priority (Nice to Have)
-11. ✅ Document exponential price transformation rationale
-12. ✅ Add property adjustment factors (standard CMA practice)
-13. ✅ Document weighting method use cases
-14. ✅ Add unit tests for core calculations
-15. ✅ Consider alternative valuation methods
+11. ✅ **COMPLETED** - Map visualization scaling uses linear scaling (proportional representation)
+12. ⚠️ Add property adjustment factors (standard CMA practice)
+13. ⚠️ Document weighting method use cases
+14. ⚠️ Add unit tests for core calculations
+15. ⚠️ Consider alternative valuation methods
 
 ---
 
