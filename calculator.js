@@ -30,6 +30,17 @@ const WEIGHTING_CONSTANTS = {
     // TODO: Consider implementing market-adaptive half-life (365/525/730 days)
     DATE_WEIGHT_HALFLIFE_DAYS: 525,
     
+    // Geographic distance weighting: properties closer to key locations get higher weight
+    // Half-life distance: properties lose half their weight at this distance (in miles)
+    // Exponential decay formula: weight = exp(-distance / HALFLIFE)
+    DISTANCE_WEIGHT_HALFLIFE_MILES: 0.5,
+    
+    // Key location coordinates for distance weighting
+    KEY_LOCATIONS: [
+        { lat: 40.678606, lng: -73.952939, name: 'Nostrand Ave A/C Station' },  // Primary transit hub
+        { lat: 40.677508, lng: -73.955723, name: 'Franklin & Dean Commercial' }  // Primary commercial corridor
+    ],
+    
     // High influence threshold: 50% above average weight
     // Properties exceeding this threshold are marked as "high influence"
     HIGH_INFLUENCE_MULTIPLIER: 1.5,
@@ -96,6 +107,57 @@ let showHeatmap = false; // Independent toggle for weights influence heatmap
 let showValueZones = false; // Independent toggle for value zones
 let geocodingInProgress = false;
 let showAmenitiesOverlay = false;
+
+/**
+ * Calculate distance in miles between two lat/lng coordinates using Haversine formula
+ * @param {number} lat1 - Latitude of first point
+ * @param {number} lng1 - Longitude of first point
+ * @param {number} lat2 - Latitude of second point
+ * @param {number} lng2 - Longitude of second point
+ * @returns {number} Distance in miles
+ */
+function calculateDistance(lat1, lng1, lat2, lng2) {
+    const R = 3959; // Earth's radius in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+/**
+ * Calculate minimum distance from a property to any key location
+ * Returns exponential decay multiplier based on proximity (1.0 = at location, 0.5 = at half-life distance)
+ * @param {Object} property - Property with coordinates {lat, lng}
+ * @returns {number} Distance weight multiplier (1.0 = closest, decays exponentially with distance)
+ */
+function calculateDistanceWeight(property) {
+    if (!property.coordinates) return 1.0; // No penalty if coordinates missing
+    
+    // Find minimum distance to any key location
+    let minDistance = Infinity;
+    WEIGHTING_CONSTANTS.KEY_LOCATIONS.forEach(location => {
+        const distance = calculateDistance(
+            property.coordinates.lat,
+            property.coordinates.lng,
+            location.lat,
+            location.lng
+        );
+        minDistance = Math.min(minDistance, distance);
+    });
+    
+    // Store distance on property for display purposes
+    property.distanceToKeyLocation = minDistance;
+    
+    // Apply exponential decay: weight = exp(-distance / halflife)
+    // At 0 miles: multiplier = 1.0 (100% weight)
+    // At 0.5 miles (halflife): multiplier = 0.607 (~60% weight)
+    // At 1.0 miles: multiplier = 0.135 (~14% weight)
+    const halflife = WEIGHTING_CONSTANTS.DISTANCE_WEIGHT_HALFLIFE_MILES;
+    return Math.exp(-minDistance / halflife);
+}
 
 // Patch HTMLCanvasElement.prototype.getContext globally to set willReadFrequently for all 2D contexts
 (function () {
@@ -244,6 +306,11 @@ function calculatePropertyWeights(properties, targetProperty, method) {
                     const dateWeight = Math.exp(-daysSinceSale / WEIGHTING_CONSTANTS.DATE_WEIGHT_HALFLIFE_DAYS);
                     weight *= dateWeight * properties.length;
                 }
+                
+                // Geographic proximity component
+                // Properties closer to key locations (transit, commercial) get higher weight
+                const distanceWeight = calculateDistanceWeight(p);
+                weight *= distanceWeight * properties.length;
                 
                 // Qualitative match multipliers
                 if (p.renovated === targetProperty.renovated) weight *= WEIGHTING_CONSTANTS.ALL_WEIGHTED_RENOVATED_MULTIPLIER;
@@ -1071,45 +1138,45 @@ function renderComparables() {
     const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
     const weights = calculatePropertyWeights(included, targetProperty, weightingMethod);
 
-    // Combine target property with comparables for sorting
-    const targetForSort = { ...targetProperty, isTarget: true };
-    let allProperties = [targetForSort, ...comparableProperties];
-
-    // Sort all properties (including target) if a sort column is active
+    // Sort comparable properties only (not target)
+    let sortedComparables = [...comparableProperties];
     if (currentSortColumn !== null) {
-        allProperties = sortPropertiesByColumn(allProperties, currentSortColumn, currentSortDirection);
+        sortedComparables = sortPropertiesByColumn(sortedComparables, currentSortColumn, currentSortDirection);
     }
 
-    allProperties.forEach(prop => {
-        // Handle target property row
-        if (prop.isTarget) {
-            const targetRow = document.createElement('tr');
-            targetRow.classList.add('target-property-row');
-            targetRow.innerHTML = `
-                <td class="checkbox-cell" colspan="2"><span class="badge badge-target">TARGET</span></td>
-                <td><strong>${prop.address}</strong></td>
-                <td>${prop.renovated}</td>
-                <td>${prop.originalDetails || 'N/A'}</td>
-                <td>${formatNumber(prop.propertySQFT, 2)}</td>
-                <td>${formatNumber(prop.buildingWidthFeet, 2)}</td>
-                <td>${formatNumber(prop.buildingDepthFeet, 2)}</td>
-                <td>${prop.floors}</td>
-                <td>${formatNumber(prop.buildingSQFT, 2)}</td>
-                <td>-</td>
-                <td>-</td>
-                <td>-</td>
-                <td class="adjustment-cell">-</td>
-                <td class="weight-cell" style="${weightingMethod === 'simple' ? 'display: none;' : ''}">-</td>
-                <td class="similarity-cell">-</td>
-                <td>${prop.sellDate}</td>
-                <td>${prop.taxClass}</td>
-                <td>${prop.occupancy}</td>
-            `;
-            tbody.appendChild(targetRow);
-            return;
-        }
+    // Render target property row first (always at top)
+    const targetForSort = { ...targetProperty, isTarget: true };
+    
+    // Calculate distance for target property
+    calculateDistanceWeight(targetForSort);
+    
+    const targetRow = document.createElement('tr');
+    targetRow.classList.add('target-property-row');
+    targetRow.innerHTML = `
+        <td class="checkbox-cell" colspan="2"><span class="badge badge-target">TARGET</span></td>
+        <td><strong>${targetForSort.address}</strong></td>
+        <td>${targetForSort.renovated}</td>
+        <td>${targetForSort.originalDetails || 'N/A'}</td>
+        <td>${formatNumber(targetForSort.propertySQFT, 2)}</td>
+        <td>${formatNumber(targetForSort.buildingWidthFeet, 2)}</td>
+        <td>${formatNumber(targetForSort.buildingDepthFeet, 2)}</td>
+        <td>${targetForSort.floors}</td>
+        <td>${formatNumber(targetForSort.buildingSQFT, 2)}</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td class="adjustment-cell">-</td>
+        <td class="weight-cell" style="${weightingMethod === 'simple' ? 'display: none;' : ''}">-</td>
+        <td class="distance-cell">${targetForSort.distanceToKeyLocation !== undefined ? formatNumber(targetForSort.distanceToKeyLocation, 2) + ' mi' : '-'}</td>
+        <td class="similarity-cell">-</td>
+        <td>${targetForSort.sellDate}</td>
+        <td>${targetForSort.taxClass}</td>
+        <td>${targetForSort.occupancy}</td>
+    `;
+    tbody.appendChild(targetRow);
 
-        // Handle comparable property rows
+    // Render comparable property rows
+    sortedComparables.forEach(prop => {
         const row = document.createElement('tr');
         row.id = `comp-${prop.id}`;
 
@@ -1237,6 +1304,7 @@ function renderComparables() {
                     </td>
                     ${adjustmentCell}
                     ${weightCell}
+                    <td class="distance-cell">${prop.distanceToKeyLocation !== undefined ? formatNumber(prop.distanceToKeyLocation, 2) + ' mi' : '-'}</td>
                     ${similarityCell}
                     <td>${prop.sellDate}</td>
                     <td>${prop.taxClass}</td>
@@ -1300,30 +1368,22 @@ function sortPropertiesByColumn(properties, columnIndex, direction) {
                 bVal = b.adjustedSalePrice || 0;
                 break;
             case 13: // Adjustment %
-                if (!a.isTarget && !b.isTarget) {
-                    const targetProp = properties.find(p => p.isTarget);
-                    aVal = a.included ? calculatePropertyAdjustments(a, targetProp).totalAdjustmentPercent : 999;
-                    bVal = b.included ? calculatePropertyAdjustments(b, targetProp).totalAdjustmentPercent : 999;
-                } else {
-                    aVal = a.isTarget ? -999 : 999;
-                    bVal = b.isTarget ? -999 : 999;
-                }
+                aVal = a.included ? calculatePropertyAdjustments(a, targetProperty).totalAdjustmentPercent : 999;
+                bVal = b.included ? calculatePropertyAdjustments(b, targetProperty).totalAdjustmentPercent : 999;
                 break;
             case 14: // Weight %
                 aVal = a.weight || 0;
                 bVal = b.weight || 0;
                 break;
-            case 15: // Similarity
-                if (!a.isTarget && !b.isTarget) {
-                    const targetProp = properties.find(p => p.isTarget);
-                    aVal = a.included ? calculateSimilarityScore(a, targetProp).score : 999;
-                    bVal = b.included ? calculateSimilarityScore(b, targetProp).score : 999;
-                } else {
-                    aVal = a.isTarget ? 999 : 999;
-                    bVal = b.isTarget ? 999 : 999;
-                }
+            case 15: // Distance
+                aVal = a.distanceToKeyLocation !== undefined ? a.distanceToKeyLocation : 999;
+                bVal = b.distanceToKeyLocation !== undefined ? b.distanceToKeyLocation : 999;
                 break;
-            case 16: // Sale Date
+            case 16: // Similarity
+                aVal = a.included ? calculateSimilarityScore(a, targetProperty).score : 999;
+                bVal = b.included ? calculateSimilarityScore(b, targetProperty).score : 999;
+                break;
+            case 17: // Sale Date
                 aVal = a.sellDate;
                 bVal = b.sellDate;
                 // Parse dates for comparison
@@ -1342,11 +1402,11 @@ function sortPropertiesByColumn(properties, columnIndex, direction) {
                     bVal = new Date(bYear, parseInt(bParts[0]) - 1, parseInt(bParts[1]));
                 }
                 return direction === 'asc' ? aVal - bVal : bVal - aVal;
-            case 17: // Tax Class
+            case 18: // Tax Class
                 aVal = String(a.taxClass);
                 bVal = String(b.taxClass);
                 return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-            case 18: // Occupancy
+            case 19: // Occupancy
                 aVal = a.occupancy;
                 bVal = b.occupancy;
                 return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
@@ -3184,7 +3244,7 @@ function createAmenitiesOverlay() {
         { lat: 40.6781, lng: -73.9559, weight: 0.50, type: 'transit' },  // Franklin Ave (4/5, 2/3) station
 
         // Subway stations - Nostrand Ave A/C line (CLOSEST TO PROPERTIES)
-        { lat: 40.6695, lng: -73.9504, weight: 0.95, type: 'transit' },  // Nostrand Ave (A/C) - VERY CLOSE, ~6 blocks
+        { lat: 40.678606, lng: -73.952939, weight: 0.95, type: 'transit' },  // Nostrand Ave (A/C) - VERY CLOSE, ~6 blocks
         { lat: 40.6782, lng: -73.9504, weight: 1.0, type: 'transit' },   // Kingston-Throop (A/C) - CLOSEST, ~6 blocks west
         { lat: 40.6650, lng: -73.9504, weight: 0.75, type: 'transit' },  // Kingston Ave (A/C) - ~8 blocks
 
@@ -3200,7 +3260,7 @@ function createAmenitiesOverlay() {
         { lat: 40.6693, lng: -73.9513, weight: 0.75, type: 'park' },     // Lincoln Terrace Park - ~7 blocks
 
         // Franklin Ave commercial corridor - HIGH ACTIVITY (restaurants, shops, grocery)
-        { lat: 40.6780, lng: -73.9559, weight: 0.95, type: 'commercial' }, // Franklin & Dean - grocery store area
+        { lat: 40.677508, lng: -73.955723, weight: 0.95, type: 'commercial' }, // Franklin & Dean - grocery store area
         { lat: 40.6785, lng: -73.9559, weight: 0.90, type: 'commercial' }, // Franklin Ave north
         { lat: 40.6775, lng: -73.9559, weight: 0.90, type: 'commercial' }, // Franklin Ave restaurants
         { lat: 40.6770, lng: -73.9559, weight: 0.85, type: 'commercial' }, // Franklin Ave mid
