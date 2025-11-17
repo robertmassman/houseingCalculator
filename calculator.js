@@ -52,7 +52,16 @@ const WEIGHTING_CONSTANTS = {
     
     // Invalid date penalty weight
     // Properties with missing/invalid sale dates get 10% of normal weight
-    INVALID_DATE_PENALTY_WEIGHT: 0.1
+    INVALID_DATE_PENALTY_WEIGHT: 0.1,
+    
+    // Property adjustment factor constants (for CMA-style comparable adjustments)
+    // Used to adjust comp prices before calculating $/SQFT averages
+    ADJUSTMENT_SIZE_PER_100SQFT: 0.02,        // ±2% per 100 SQFT difference
+    ADJUSTMENT_RENOVATION_PREMIUM: 0.10,       // +10% if comp is renovated vs non-renovated target
+    ADJUSTMENT_RENOVATION_DISCOUNT: 0.10,      // -10% if comp is non-renovated vs renovated target
+    ADJUSTMENT_LOT_PER_500SQFT: 0.01,         // ±1% per 500 SQFT lot size difference
+    ADJUSTMENT_WIDTH_PER_FOOT: 0.015,         // ±1.5% per foot of width difference
+    ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM: 0.05 // +5% if comp has original details vs target without
 };
 
 // Map-related globals
@@ -252,6 +261,84 @@ function calculatePropertyWeights(properties, targetProperty, method) {
     if (totalWeight === 0) return properties.map(() => 100 / properties.length); // Fallback to equal weights
     
     return rawWeights.map(w => (w / totalWeight) * 100);
+}
+
+/**
+ * Calculate adjustment factor for a comparable property based on differences from target
+ * Standard in real estate appraisal (CMA - Comparative Market Analysis)
+ * Adjustments are multiplicative to reflect compound effects of differences
+ * 
+ * @param {Object} comp - Comparable property object
+ * @param {Object} target - Target property object
+ * @returns {Object} - { adjustmentFactor: number, breakdown: object with individual adjustments }
+ */
+function calculatePropertyAdjustments(comp, target) {
+    let adjustmentFactor = 1.0;
+    const breakdown = {
+        size: 0,
+        renovation: 0,
+        lotSize: 0,
+        width: 0,
+        originalDetails: 0
+    };
+    
+    // Size adjustment: ±2% per 100 sq ft difference
+    // Larger comps are typically worth more per SQFT (economies of scale)
+    if (comp.buildingSQFT && target.buildingSQFT) {
+        const sizeDiff = comp.buildingSQFT - target.buildingSQFT;
+        const sizeAdjustment = (sizeDiff / 100) * WEIGHTING_CONSTANTS.ADJUSTMENT_SIZE_PER_100SQFT;
+        breakdown.size = sizeAdjustment;
+        adjustmentFactor *= (1 + sizeAdjustment);
+    }
+    
+    // Renovation adjustment: ±10% for renovation status mismatch
+    // If comp is renovated but target isn't, reduce comp price (it's worth more than target)
+    // If comp is not renovated but target is, increase comp price (it's worth less than target)
+    if (comp.renovated && target.renovated) {
+        if (comp.renovated === 'Yes' && target.renovated === 'No') {
+            breakdown.renovation = -WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_PREMIUM;
+            adjustmentFactor *= (1 - WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_PREMIUM);
+        } else if (comp.renovated === 'No' && target.renovated === 'Yes') {
+            breakdown.renovation = WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_DISCOUNT;
+            adjustmentFactor *= (1 + WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_DISCOUNT);
+        }
+    }
+    
+    // Lot size adjustment: ±1% per 500 sq ft difference
+    // Larger lots command premium in Brooklyn brownstone market
+    if (comp.propertySQFT && target.propertySQFT) {
+        const lotDiff = comp.propertySQFT - target.propertySQFT;
+        const lotAdjustment = (lotDiff / 500) * WEIGHTING_CONSTANTS.ADJUSTMENT_LOT_PER_500SQFT;
+        breakdown.lotSize = lotAdjustment;
+        adjustmentFactor *= (1 + lotAdjustment);
+    }
+    
+    // Width adjustment: ±1.5% per foot difference
+    // Wider properties (especially 20+ feet) command significant premiums
+    if (comp.buildingWidthFeet && target.buildingWidthFeet) {
+        const widthDiff = comp.buildingWidthFeet - target.buildingWidthFeet;
+        const widthAdjustment = widthDiff * WEIGHTING_CONSTANTS.ADJUSTMENT_WIDTH_PER_FOOT;
+        breakdown.width = widthAdjustment;
+        adjustmentFactor *= (1 + widthAdjustment);
+    }
+    
+    // Original details adjustment: +5% if comp has original details vs target without
+    // Period details (moldings, mantels, etc.) add value in historic districts
+    if (comp.originalDetails && target.originalDetails) {
+        if (comp.originalDetails === 'Yes' && target.originalDetails === 'No') {
+            breakdown.originalDetails = -WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM;
+            adjustmentFactor *= (1 - WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM);
+        } else if (comp.originalDetails === 'No' && target.originalDetails === 'Yes') {
+            breakdown.originalDetails = WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM;
+            adjustmentFactor *= (1 + WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM);
+        }
+    }
+    
+    return {
+        adjustmentFactor,
+        breakdown,
+        totalAdjustmentPercent: (adjustmentFactor - 1.0) * 100
+    };
 }
 
 // Utility function to format number
