@@ -12,7 +12,7 @@ This code review evaluates the accuracy of real estate calculations and identifi
 
 ### Critical Issues Found: 2 (✅ Both Resolved)
 ### Calculation Errors Found: 0 (✅ All Resolved)
-### Code Quality Issues: 4 (2 resolved, 2 remaining)
+### Code Quality Issues: 4 (3 resolved, 1 remaining)
 ### Recommendations: 12
 
 ---
@@ -430,51 +430,99 @@ return 1 / (1 + sizeDiff / targetSize);
 
 ---
 
-### 13. **Magic Numbers in Calculations**
+### 13. **Magic Numbers in Calculations** ✅ RESOLVED
 **Location:** Throughout codebase  
 **Severity:** LOW - Code readability  
+**Status:** ✅ **COMPLETED**
 
-**Issue:** Several "magic numbers" lack explanation:
+**Previous Issue:** Several "magic numbers" lacked explanation throughout the code, making it difficult to understand the rationale behind specific values.
 
+**Problem Examples:**
 ```javascript
-// Line 117: Why 525 days half-life?
+// Why 525 days half-life?
 return Math.exp(-daysSinceSale / 525);
 
-// Line 450: Why 1.5x threshold for "high influence"?
+// Why 1.5x threshold for "high influence"?
 const isHighInfluence = weightPercent > (100 / included.length) * 1.5;
 
-// Line 804: Why 3.0x weight for renovated?
+// Why 3.0x weight for renovated?
 return p.renovated === 'Yes' ? 3.0 : 1.0;
 
-// Line 1044: Why 1.5x and 1.3x multipliers?
+// Why 1.5x and 1.3x multipliers?
 if (p.renovated === targetProperty.renovated) weight *= 1.5;
 if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
 ```
 
-**Recommendation:** Define constants with explanations:
+**Resolution:**
+Created comprehensive `WEIGHTING_CONSTANTS` object with documented explanations for all magic numbers:
 
 ```javascript
-// Weighting constants
-const CONSTANTS = {
+// Weighting and calculation constants
+const WEIGHTING_CONSTANTS = {
     // Date weighting half-life: 525 days (~1.44 years)
     // Properties lose half their weight after this period
+    // Exponential decay formula: weight = exp(-days / HALFLIFE)
     DATE_WEIGHT_HALFLIFE_DAYS: 525,
     
     // High influence threshold: 50% above average weight
+    // Properties exceeding this threshold are marked as "high influence"
     HIGH_INFLUENCE_MULTIPLIER: 1.5,
     
-    // Renovated property weight multiplier
-    // Renovated properties are 3x more relevant for renovated targets
+    // Renovated property weight multiplier (for 'renovated' weighting method)
+    // Renovated properties are 3x more relevant than non-renovated
     RENOVATED_WEIGHT_MULTIPLIER: 3.0,
     
-    // Match multipliers for combined weighting
-    RENOVATED_MATCH_MULTIPLIER: 1.5,
-    ORIGINAL_DETAILS_MATCH_MULTIPLIER: 1.3,
+    // Combined weighting match multipliers (for 'combined' weighting method)
+    // When target and comp both renovated: 3x multiplier
+    RENOVATED_MATCH_MULTIPLIER: 3.0,
+    // When target and comp both have original details: 2x multiplier
+    ORIGINAL_DETAILS_MATCH_MULTIPLIER: 2.0,
     
-    // Blended estimate weights
-    BLENDED_BUILDING_WEIGHT: 0.7,  // 70% building-based
-    BLENDED_TOTAL_WEIGHT: 0.3       // 30% total property-based
+    // All-weighted blend multipliers (for 'all-weighted' method)
+    // Applied when properties match target characteristics
+    ALL_WEIGHTED_RENOVATED_MULTIPLIER: 1.5,
+    ALL_WEIGHTED_ORIGINAL_DETAILS_MULTIPLIER: 1.3,
+    
+    // Legacy blended estimate weights (70/30 split)
+    // Note: Now using data-calibrated weights in production
+    BLENDED_BUILDING_WEIGHT: 0.7,  // 70% building-based estimate
+    BLENDED_LAND_WEIGHT: 0.3,       // 30% total property-based estimate
+    
+    // Invalid date penalty weight
+    // Properties with missing/invalid sale dates get 10% of normal weight
+    INVALID_DATE_PENALTY_WEIGHT: 0.1
 };
+```
+
+**All Instances Updated:**
+Replaced magic numbers throughout the codebase with named constants:
+
+- ✅ Date weighting half-life: `525` → `WEIGHTING_CONSTANTS.DATE_WEIGHT_HALFLIFE_DAYS`
+- ✅ High influence threshold: `1.5` → `WEIGHTING_CONSTANTS.HIGH_INFLUENCE_MULTIPLIER`
+- ✅ Renovated multiplier: `3.0` → `WEIGHTING_CONSTANTS.RENOVATED_WEIGHT_MULTIPLIER`
+- ✅ Match multipliers: `3.0`, `2.0` → `RENOVATED_MATCH_MULTIPLIER`, `ORIGINAL_DETAILS_MATCH_MULTIPLIER`
+- ✅ All-weighted multipliers: `1.5`, `1.3` → `ALL_WEIGHTED_RENOVATED_MULTIPLIER`, `ALL_WEIGHTED_ORIGINAL_DETAILS_MULTIPLIER`
+- ✅ Blended weights: `0.7`, `0.3` → `BLENDED_BUILDING_WEIGHT`, `BLENDED_LAND_WEIGHT`
+- ✅ Invalid date penalty: `0.1` → `INVALID_DATE_PENALTY_WEIGHT`
+
+**Benefits:**
+- ✅ **Self-documenting code** - constant names explain their purpose
+- ✅ **Easier to adjust** - change in one place affects all uses
+- ✅ **Better maintainability** - future developers understand the reasoning
+- ✅ **Consistency** - ensures same values used throughout
+- ✅ **Inline documentation** - comments explain why each value was chosen
+
+**Example Transformation:**
+```javascript
+// BEFORE (unclear)
+if (!saleDate) return 0.1;
+const daysSinceSale = daysBetween(saleDate);
+return Math.exp(-daysSinceSale / 525);
+
+// AFTER (self-documenting)
+if (!saleDate) return WEIGHTING_CONSTANTS.INVALID_DATE_PENALTY_WEIGHT;
+const daysSinceSale = daysBetween(saleDate);
+return Math.exp(-daysSinceSale / WEIGHTING_CONSTANTS.DATE_WEIGHT_HALFLIFE_DAYS);
 ```
 
 ---
