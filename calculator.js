@@ -179,7 +179,10 @@ function parseCurrency(value) {
 // Utility function to format currency
 function formatCurrency(value) {
     if (!value || value === 0) return '$0.00';
-    return '$' + value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const isNegative = value < 0;
+    const absValue = Math.abs(value);
+    const formatted = absValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return isNegative ? '-$' + formatted : '$' + formatted;
 }
 
 /**
@@ -2042,50 +2045,52 @@ function calculateAndRenderEstimates() {
         <div class="estimate-box primary">
             <h4>NYC Appraisal Method</h4>
             <div class="estimate-value">${formatCurrency(nycEstimateMedian)}</div>
-            <div class="estimate-formula">Industry-Standard: Interior SQFT × Comp $/SQFT + Qualitative Adjustments</div>
-            <div class="confidence-interval" style="margin-top: 15px; border-top: 1px solid #e0e0e0; padding-top: 10px;">
-                <div class="ci-row" style="font-weight: bold; color: #2c3e50;">
-                    <span class="ci-label">Base Value (Interior SQFT × $/SQFT)</span> 
-                    <span class="ci-value">${formatCurrency(nycBaseValueMedian)}</span>
-                </div>
-                <div class="estimate-formula" style="font-size: 0.9em; color: #7f8c8d; margin-bottom: 10px;">
-                    ${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(medianBuildingPriceSQFT)}/SQFT
-                </div>
-                
-                <div class="ci-row" style="font-weight: 600; color: ${landAdj.adjustment >= 0 ? '#27ae60' : '#e74c3c'}; margin-top: 8px;">
-                    <span class="ci-label">+ Lot Size Adjustment</span> 
-                    <span class="ci-value">${landAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(landAdj.adjustment)}</span>
-                </div>
-                <div class="estimate-formula" style="font-size: 0.85em; color: #7f8c8d; margin-left: 15px;">
-                    ${landAdj.description}: Target ${formatNumber(targetProperty.propertySQFT, 0)} SQFT vs typical ${formatNumber(landAdj.typical, 0)} SQFT (${landAdj.difference >= 0 ? '+' : ''}${formatNumber(landAdj.difference, 0)} SQFT)
-                </div>
-                
-                <div class="ci-row" style="font-weight: 600; color: ${widthAdj.premium >= 0 ? '#27ae60' : '#e74c3c'}; margin-top: 8px;">
-                    <span class="ci-label">+ Width Premium</span> 
-                    <span class="ci-value">${widthAdj.premium >= 0 ? '+' : ''}${formatCurrency(widthAdj.premium)}</span>
-                </div>
-                <div class="estimate-formula" style="font-size: 0.85em; color: #7f8c8d; margin-left: 15px;">
-                    ${widthAdj.description}: Target ${formatNumber(targetProperty.buildingWidthFeet, 1)}' vs typical ${formatNumber(widthAdj.typical, 1)}' (${widthAdj.difference >= 0 ? '+' : ''}${formatNumber(widthAdj.difference, 1)}')
-                </div>
-                
-                ${blockAdjustment !== 0 ? `
-                <div class="ci-row" style="font-weight: 600; color: ${blockAdjustment >= 0 ? '#27ae60' : '#e74c3c'}; margin-top: 8px;">
-                    <span class="ci-label">+ Block/Location</span> 
-                    <span class="ci-value">${blockAdjustment >= 0 ? '+' : ''}${formatCurrency(blockAdjustment)}</span>
-                </div>
-                ` : ''}
-                
-                <div style="border-top: 2px solid #3498db; margin: 12px 0; padding-top: 10px;">
-                    <div class="ci-row" style="font-weight: bold; font-size: 1.05em; color: #2c3e50;">
-                        <span class="ci-label">Total Qualitative Adjustments:</span> 
-                        <span class="ci-value" style="color: ${totalAdjustments >= 0 ? '#27ae60' : '#e74c3c'};">${totalAdjustments >= 0 ? '+' : ''}${formatCurrency(totalAdjustments)}</span>
-                    </div>
-                </div>
+            <div class="estimate-formula" style="font-size: 0.95em; color: #555; margin-bottom: 12px;">
+                ${formatNumber(targetBuildingSQFTWithFloors, 0)} SQFT × ${formatCurrency(medianBuildingPriceSQFT)}/SQFT = ${formatCurrency(nycBaseValueMedian)}
+                ${landAdj.adjustment !== 0 ? ` <span style="color: ${landAdj.adjustment >= 0 ? '#27ae60' : '#e74c3c'};">${landAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(landAdj.adjustment)}</span> lot` : ''}
+                ${widthAdj.premium !== 0 ? ` <span style="color: ${widthAdj.premium >= 0 ? '#27ae60' : '#e74c3c'};">${widthAdj.premium >= 0 ? '+' : ''}${formatCurrency(widthAdj.premium)}</span> width` : ''}
             </div>
-            <div class="confidence-interval" style="margin-top: 10px;">
-                <div class="ci-row"><span class="ci-label">Weighted Average:</span> <span class="ci-value">${formatCurrency(nycEstimateWeighted)}</span></div>
-                <div class="estimate-formula" style="display: flex; justify-content: space-between;"><span>68% Confidence (±1σ):</span><span>${formatCurrency(nycEstimateLow68)} - ${formatCurrency(nycEstimateHigh68)}</span></div>
-                <div class="estimate-formula" style="display: flex; justify-content: space-between;"><span>95% Confidence (±2σ):</span><span>${formatCurrency(nycEstimateLow95)} - ${formatCurrency(nycEstimateHigh95)}</span></div>
+            
+               
+                <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 0.9em;">
+                    <div style="margin-bottom: 8px;">
+                        <strong>Base:</strong> <strong>${formatCurrency(nycBaseValueMedian)}</strong> 
+                        <span style="font-size: 0.85em; color: #666;">(${formatNumber(targetBuildingSQFTWithFloors, 0)} SQFT × ${formatCurrency(medianBuildingPriceSQFT)}/SQFT)</span>
+                    </div>
+                    ${landAdj.adjustment !== 0 ? `
+                    <div style="margin-bottom: 8px; color: ${landAdj.adjustment >= 0 ? '#27ae60' : '#e74c3c'};">
+                        <strong style="color: #333;">Lot:</strong> ${landAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(landAdj.adjustment)} 
+                        <span style="font-size: 0.85em; color: #666;">(${landAdj.description}: ${formatNumber(targetProperty.propertySQFT, 0)} vs ${formatNumber(landAdj.typical, 0)} SQFT)</span>
+                    </div>
+                    ` : ''}
+                    ${widthAdj.premium !== 0 ? `
+                    <div style="margin-bottom: 8px; color: ${widthAdj.premium >= 0 ? '#27ae60' : '#e74c3c'};">
+                        <strong style="color: #333;">Width:</strong> ${widthAdj.premium >= 0 ? '+' : ''}${formatCurrency(widthAdj.premium)}
+                        <span style="font-size: 0.85em; color: #666;">(${widthAdj.description}: ${formatNumber(targetProperty.buildingWidthFeet, 1)}' vs ${formatNumber(widthAdj.typical, 1)}')</span>
+                    </div>
+                    ` : ''}
+                    ${blockAdjustment !== 0 ? `
+                    <div style="margin-bottom: 8px; color: ${blockAdjustment >= 0 ? '#27ae60' : '#e74c3c'};">
+                        <strong>Location:</strong> ${blockAdjustment >= 0 ? '+' : ''}${formatCurrency(blockAdjustment)}
+                    </div>
+                    ` : ''}
+                    ${totalAdjustments !== 0 ? `
+                    <div style="border-top: 1px solid #ddd; padding-top: 8px; margin-top: 8px; font-weight: 600;">
+                        <strong>Total Adjustments:</strong> <span style="color: ${totalAdjustments >= 0 ? '#27ae60' : '#e74c3c'};">${totalAdjustments >= 0 ? '+' : ''}${formatCurrency(totalAdjustments)}</span>
+                    </div>
+                    ` : ''}
+                </div>
+            
+            <div class="confidence-interval" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 4px;">
+                    <span>Weighted Avg:</span><span style="font-weight: 600;">${formatCurrency(nycEstimateWeighted)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: #666;">
+                    <span>68% range:</span><span>${formatCurrency(nycEstimateLow68)} - ${formatCurrency(nycEstimateHigh68)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: #666;">
+                    <span>95% range:</span><span>${formatCurrency(nycEstimateLow95)} - ${formatCurrency(nycEstimateHigh95)}</span>
+                </div>
             </div>
         </div>
         
