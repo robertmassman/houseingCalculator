@@ -10,7 +10,7 @@
 
 This code review evaluates the accuracy of real estate calculations and identifies opportunities for code optimization. The calculator implements multiple valuation methods based on comparable sales analysis, which is a standard approach in real estate appraisal.
 
-### Critical Issues Found: 2 (✅ Both Resolved)
+### Critical Issues Found: 3 (✅ All Resolved)
 ### Calculation Errors Found: 0 (✅ All Resolved)
 ### Code Quality Issues: 4 (✅ All Resolved)
 ### Recommendations: 12
@@ -19,7 +19,60 @@ This code review evaluates the accuracy of real estate calculations and identifi
 
 ## 🔴 CRITICAL ISSUES
 
-### 1. **INCORRECT Building SQFT Calculation in Weighted Methods** ✅ RESOLVED
+### 1. **Double-Counting Adjustments in NYC Appraisal Method** ✅ RESOLVED
+**Location:** `calculator.js`, lines 1248-1310  
+**Severity:** CRITICAL - Caused 27% undervaluation ($1.57M vs $2.14M)  
+**Status:** ✅ **FIXED** - Now uses raw comp $/SQFT + qualitative adjustments
+
+**Previous Issue:**
+The NYC Appraisal Method was applying adjustments **twice**, causing severe undervaluation:
+
+1. **First**: CMA percentage-based adjustments applied to comp prices
+   - Larger comps adjusted DOWN by ~25%
+   - Smaller lots adjusted DOWN
+   - Result: Adjusted $/SQFT = $426.64
+
+2. **Second**: Qualitative adjustments applied on top
+   - Lot size penalty: -$17,366
+   - Width penalty: -$66,600
+   - Total: -$83,966
+
+**Combined Effect:** Double penalty for same factors
+```javascript
+// WRONG: Using CMA-adjusted prices
+const adjustedComps = included.map(p => {
+    const adjustment = calculatePropertyAdjustments(p, targetProperty);
+    return { adjustedBuildingPriceSQFT: p.adjustedSalePrice * adjustment.adjustmentFactor / p.buildingSQFT };
+});
+avgBuildingPriceSQFT = median(adjustedComps);  // $426.64/SQFT
+
+// Then ALSO adding qualitative adjustments
+const nycEstimate = (targetSQFT × $426.64) + landAdj + widthAdj;  // $1,570,460
+```
+
+**Resolution:**
+Now uses **raw unadjusted comp $/SQFT**, then applies qualitative adjustments once:
+```javascript
+// CORRECT: Use raw comp $/SQFT
+const buildingPrices = included.map(p => p.buildingPriceSQFT);  // Raw prices
+avgBuildingPriceSQFT = median(buildingPrices);  // $592.11/SQFT
+
+// Apply qualitative adjustments once (industry standard)
+const nycEstimate = (targetSQFT × $592.11) + landAdj + widthAdj;  // $2,136,446
+```
+
+**Benefits:**
+- ✅ Follows NYC appraisal industry standards
+- ✅ No double-counting of property differences
+- ✅ Accurate valuations ($2.14M vs $1.57M)
+- ✅ CMA adjustments still shown in table for transparency
+
+**CMA Adjustments Now Display-Only:**
+The percentage-based adjustments are still calculated and displayed in the "Adjustment" column, but they serve as **reference information only** and are not used in the NYC calculation.
+
+---
+
+### 2. **INCORRECT Building SQFT Calculation in Weighted Methods** ✅ RESOLVED
 **Location:** `calculator.js`, multiple locations  
 **Severity:** HIGH - Affects valuation accuracy  
 **Status:** ✅ **FIXED** - All instances now use `p.buildingSQFT`
@@ -635,23 +688,30 @@ function calculatePropertyAdjustments(comp, target) {
 }
 ```
 
-**Integration into NYC Appraisal Method:**
-All comparable prices are now adjusted before calculating average $/SQFT:
+**Display in UI (Reference Only):**
+CMA adjustments are calculated and displayed in the comparables table for transparency:
 
 ```javascript
-// Apply adjustment factors to each comparable
-const adjustedComps = included.map(p => {
-    const adjustment = calculatePropertyAdjustments(p, targetProperty);
-    const adjustedPrice = p.adjustedSalePrice * adjustment.adjustmentFactor;
-    return {
-        ...p,
-        adjustedPriceForComparison: adjustedPrice,
-        adjustedBuildingPriceSQFT: adjustedPrice / p.buildingSQFT
-    };
-});
+// Calculate adjustment for display in table
+const adjustment = calculatePropertyAdjustments(comp, targetProperty);
+const adjPercent = adjustment.totalAdjustmentPercent;
 
-// Calculate averages using adjusted prices
-avgBuildingPriceSQFT = adjustedComps.reduce(...) / adjustedComps.length;
+// Show in "Adjustment" column with color coding
+<td class="adjustment-cell">
+    ${adjPercent >= 0 ? '+' : ''}${adjPercent.toFixed(1)}%
+</td>
+```
+
+**NOT Used in NYC Appraisal Calculation:**
+The NYC method uses **raw unadjusted comp $/SQFT**, then applies qualitative adjustments separately:
+
+```javascript
+// Use raw comp prices (NOT CMA-adjusted)
+const buildingPrices = included.map(p => p.buildingPriceSQFT);
+avgBuildingPriceSQFT = calculateMedian(buildingPrices);
+
+// Apply qualitative adjustments separately (industry standard)
+const nycEstimate = (targetSQFT × avgBuildingPriceSQFT) + landAdj + widthAdj;
 ```
 
 **UI Improvements:**

@@ -1,8 +1,63 @@
 # NYC Appraisal Method Implementation
 
 **Date:** November 17, 2025  
-**Status:** ✅ Complete  
+**Status:** ✅ Complete (Critical Bugfix Applied)  
 **Feature:** Pure NYC appraisal methodology with qualitative land adjustments
+
+---
+
+## 🔴 CRITICAL BUGFIX - Double-Counting Adjustments
+
+**Date Fixed:** November 17, 2025  
+**Severity:** HIGH - Caused significant undervaluation
+
+### The Problem
+
+The NYC Appraisal Method was **double-counting adjustments**, resulting in artificially low valuations:
+
+1. **First adjustment**: CMA percentage-based adjustments were applied to comp prices
+2. **Second adjustment**: Qualitative flat-dollar adjustments were added on top
+
+**Example of Double-Counting:**
+```javascript
+// WRONG: Was using CMA-adjusted $/SQFT
+const adjustedComps = included.map(p => {
+    const adjustment = calculatePropertyAdjustments(p, targetProperty);
+    const adjustedPrice = p.adjustedSalePrice * adjustment.adjustmentFactor;
+    return {
+        adjustedBuildingPriceSQFT: adjustedPrice / p.buildingSQFT  // $426.64/SQFT
+    };
+});
+
+// Then ALSO adding qualitative adjustments
+const nycEstimate = baseValue + landAdj + widthAdj;  // Double penalty!
+```
+
+**Result:** Target property valued at $1,570,460 (should be ~$2,140,000)
+
+### The Fix
+
+**Use raw comp $/SQFT, then apply qualitative adjustments separately** (industry standard):
+
+```javascript
+// CORRECT: Use raw unadjusted comp $/SQFT
+const buildingPrices = included.map(p => p.buildingPriceSQFT);  // $592.11/SQFT
+
+// Calculate median from raw values
+const medianBuildingPriceSQFT = calculateMedian(buildingPrices);
+
+// Apply qualitative adjustments once
+const nycBaseValue = targetBuildingSQFT * medianBuildingPriceSQFT;
+const nycEstimate = nycBaseValue + landAdj + widthAdj;
+```
+
+**Result:** Target property correctly valued at $2,136,446
+
+### CMA Adjustments Now Display-Only
+
+CMA percentage-based adjustments are still calculated and shown in the **Adjustment column** for transparency, but they are **NOT used** in the NYC Appraisal Method calculation.
+
+**Purpose:** Help users understand how each comp differs from the target property.
 
 ---
 
