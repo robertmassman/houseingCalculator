@@ -43,39 +43,34 @@ h3 {
 }
 
 .target-property {
-    background: #f0f7ff;
+    background-color: #f0f7ff;
+    border-radius: 8px;
     padding: 20px;
-    border-radius: 6px;
-    margin-bottom: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .target-property h3 {
-    color: #2c3e50;
-    margin-top: 0;
+    margin-top: 10px;
     margin-bottom: 15px;
-    font-size: 18px;
+    color: #2c3e50;
 }
 
 .property-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-top: 15px;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
 }
 
 .property-field {
-    background: white;
-    padding: 12px 15px;
-    border-radius: 4px;
-    border-left: 4px solid #3498db;
+    padding: 0;
 }
 
 .property-field label {
-    font-size: 12px;
-    color: #555;
-    margin-bottom: 5px;
-    font-weight: 500;
     display: block;
+    font-size: 12px;
+    color: #7f8c8d;
+    margin-bottom: 4px;
 }
 
 .property-field input {
@@ -87,7 +82,7 @@ h3 {
 
 .property-field input:focus {
     outline: none;
-    border-color: #3498db;
+    border-color: #667eea;
 }
 
 .property-field .calculated {
@@ -99,9 +94,39 @@ h3 {
 
 .property-field .static-value {
     font-size: 16px;
-    color: #2c3e50;
     font-weight: 600;
-    margin-top: 2px;
+    color: #2c3e50;
+}
+
+.property-field-group {
+    margin-bottom: 15px;
+}
+
+.field-group-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.property-field-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0 6px 12px;
+    font-size: 13px;
+}
+
+.property-field-item .field-label {
+    color: #7f8c8d;
+    font-weight: 400;
+}
+
+.property-field-item .field-value {
+    color: #2c3e50;
+    font-weight: 500;
 }
 
 .estimates-section {
@@ -121,6 +146,20 @@ h3 {
 
 .estimate-box.primary {
     border-left-color: #27ae60;
+}
+
+.estimate-box.minimized {
+    padding: 12px 15px;
+    border-left: none;
+}
+
+.estimate-box.minimized h4 {
+    font-size: 13px;
+    margin: 0 0 8px 0;
+}
+
+.estimate-box.minimized .estimate-value {
+    font-size: 20px;
 }
 
 .estimate-box.high-influence-estimate {
@@ -246,6 +285,40 @@ tr.highlighted {
 
 tr.highlighted:hover {
     background: #fff5d6;
+}
+
+tr.target-property-row {
+    background: #e3f2fd;
+    border-left: 4px solid #2196F3;
+    font-weight: 500;
+}
+
+tr.target-property-row:hover {
+    background: #bbdefb;
+}
+
+.badge-target {
+    background: #2196F3;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+#comps-table thead th {
+    position: relative;
+    user-select: none;
+}
+
+#comps-table thead th.sort-asc,
+#comps-table thead th.sort-desc {
+    background: #34495e;
+}
+
+.sort-indicator {
+    margin-left: 4px;
+    font-size: 10px;
 }
 
 .checkbox-cell {
@@ -602,33 +675,27 @@ tr.high-influence:hover {
     
     /* Target Property - more compact on mobile */
     .target-property {
-        padding: 12px;
+        padding: 0;
         margin-bottom: 15px;
+        border-radius: 10px;
     }
     
     .target-property h3 {
-        font-size: 15px;
-        margin-bottom: 8px;
+        font-size: 18px;
     }
     
     /* Property grid - stack vertically on mobile */
     .property-grid {
-        grid-template-columns: repeat(3, 1fr) !important;
-        gap: 8px;
-    }
-    
-    .property-field {
-        padding: 8px;
+        grid-template-columns: 1fr;
+        gap: 12px;
     }
     
     .property-field label {
         font-size: 11px;
-        margin-bottom: 2px;
     }
     
     .property-field .static-value {
-        font-size: 13px;
-        font-weight: 600;
+        font-size: 15px;
     }
     
     /* Estimates section - stack vertically */

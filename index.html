@@ -13,14 +13,16 @@
         <h1>Crown Heights Property Estimator</h1>
         <p style="color: #666; margin-bottom: 20px;">Dynamic property valuation calculator with comparable analysis</p>
         
-        
+        <h2>Update Target</h2>
+        <select id="target-property-select" onchange="changeTargetProperty()"
+            style="margin-bottom: 15px; padding: 8px 12px; border-radius: 6px; border: 1px solid #3498db; background: white; color: #2c3e50; font-size: 14px; cursor: pointer;">
+            <option value="0">Select a property...</option>
+        </select>
 
         <!-- Target Property Section -->
         <h2>Target Property</h2>
         <div class="target-property">
-            <select id="target-property-select" onchange="changeTargetProperty()" style="margin-bottom: 15px; padding: 8px 12px; border-radius: 6px; border: 1px solid #3498db; background: white; color: #2c3e50; font-size: 14px; cursor: pointer;">
-                <option value="0">Select a property...</option>
-            </select>
+            
             <h3 id="target-address">Loading...</h3>
             <div class="property-grid" id="target-property-fields"></div>
         </div>
@@ -52,7 +54,7 @@
             </div>
             <div id="estimates-container"></div>
             
-            <h3>Reference Values</h3>
+            <h3>Direct Comp Reference Values</h3>
             <div class="reference-values" id="reference-values"></div>
         </div>
 
@@ -64,7 +66,7 @@
         <h2>Map View</h2>
         <div class="map-container">
             <div class="map-controls">
-                <button id="map-heatmap-btn" class="map-control-btn" onclick="showMapHeatmap()">Influence</button>
+                <button id="map-heatmap-btn" class="map-control-btn" onclick="showMapHeatmap()">Weights Influence</button>
                 <button id="map-value-zones-btn" class="map-control-btn" onclick="showMapValueZones()">Value Zones</button>
                 <button id="map-amenities-btn" class="map-control-btn" onclick="toggleAmenitiesOverlay()">Amenities</button>
             </div>
@@ -90,7 +92,10 @@
                         <th>Renovated</th>
                         <th>Original Details</th>
                         <th>Property SQFT</th>
+                        <th>Building Width</th>
+                        <th>Building Depth</th>
                         <th>Building SQFT</th>
+                        <th>Floors</th>
                         <th>Building $ SQFT</th>
                         <th>Total $ SQFT</th>
                         <th>Sale Price</th>
