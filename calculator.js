@@ -760,6 +760,7 @@ function renderComparables() {
                 <td>-</td>
                 <td>-</td>
                 <td>-</td>
+                <td class="adjustment-cell">-</td>
                 <td class="weight-cell" style="${weightingMethod === 'simple' ? 'display: none;' : ''}">-</td>
                 <td>-</td>
                 <td>${prop.taxClass}</td>
@@ -797,6 +798,22 @@ function renderComparables() {
             row.classList.add('high-influence');
         }
 
+        // Calculate property adjustment for this comp
+        const adjustment = calculatePropertyAdjustments(prop, targetProperty);
+        const adjPercent = adjustment.totalAdjustmentPercent;
+        
+        // Build tooltip showing breakdown of adjustments
+        const adjTooltip = `Total: ${adjPercent >= 0 ? '+' : ''}${adjPercent.toFixed(1)}%\n` +
+            (adjustment.breakdown.size !== 0 ? `Size: ${(adjustment.breakdown.size * 100).toFixed(1)}%\n` : '') +
+            (adjustment.breakdown.renovation !== 0 ? `Renovation: ${(adjustment.breakdown.renovation * 100).toFixed(1)}%\n` : '') +
+            (adjustment.breakdown.lotSize !== 0 ? `Lot Size: ${(adjustment.breakdown.lotSize * 100).toFixed(1)}%\n` : '') +
+            (adjustment.breakdown.width !== 0 ? `Width: ${(adjustment.breakdown.width * 100).toFixed(1)}%\n` : '') +
+            (adjustment.breakdown.originalDetails !== 0 ? `Details: ${(adjustment.breakdown.originalDetails * 100).toFixed(1)}%\n` : '');
+        
+        const adjustmentCell = prop.included ?
+            `<td class="adjustment-cell" title="${adjTooltip}" style="color: ${adjPercent > 0 ? '#27ae60' : adjPercent < 0 ? '#e74c3c' : '#666'}; font-weight: ${Math.abs(adjPercent) > 5 ? '600' : '400'};">${adjPercent >= 0 ? '+' : ''}${adjPercent.toFixed(1)}%</td>` :
+            '<td class="adjustment-cell">-</td>';
+
         const weightCell = weightingMethod !== 'simple' ?
             `<td class="weight-cell">${prop.included ? formatNumber(weightPercent, 1) + '%' : '-'}</td>` :
             '<td class="weight-cell" style="display: none;">-</td>';
@@ -825,6 +842,7 @@ function renderComparables() {
                     <td>
                         <span style="${prop.appreciationAmount > 1000 ? 'color: #27ae60; font-weight: 500;' : ''}" title="${prop.appreciationAmount > 1000 ? 'Original: ' + formatCurrency(prop.originalSalePrice || prop.salePrice) + '\nAdjustment: +' + formatCurrency(prop.appreciationAmount) + ' (±' + (prop.appreciationUncertainty || 0).toFixed(1) + '%)\nMethod: ' + (prop.appreciationMethod || 'compound') + '\nRange: ' + formatCurrency(prop.adjustedSalePriceLow || prop.adjustedSalePrice) + ' - ' + formatCurrency(prop.adjustedSalePriceHigh || prop.adjustedSalePrice) : ''}">${formatCurrency(prop.adjustedSalePrice)}</span>
                     </td>
+                    ${adjustmentCell}
                     ${weightCell}
                     <td>${prop.sellDate}</td>
                     <td>${prop.taxClass}</td>

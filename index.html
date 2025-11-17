@@ -36,7 +36,7 @@
             <h2 style="margin-top: 0; border: none;">Estimated Sale Price</h2>
             
             <!-- Appreciation Rate Control -->
-            <!-- <div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #3498db;">
+            <div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #3498db;">
                 <label style="display: flex; align-items: center; gap: 10px; font-weight: 500; color: #2c3e50;">
                     <span style="min-width: 180px;">Annual Appreciation Rate:</span>
                     <input type="number" id="appreciation-rate" value="5.0" min="0" max="20" step="0.5" 
@@ -55,7 +55,7 @@
                 <button class="weight-btn" data-method="renovated" onclick="setWeightingMethod('renovated')" style="background-color: #e91e63;">Renovated</button>
                 <button class="weight-btn" data-method="combined" onclick="setWeightingMethod('combined')" style="background-color: #8e44ad;">Combined (Reno+Details)</button>
                 <button class="weight-btn" data-method="all-weighted" onclick="setWeightingMethod('all-weighted')" style="background-color: #16a085;">All-Weighted Blend</button>
-            </div> -->
+            </div>
 
             <div id="estimates-container"></div>
             
@@ -104,6 +104,7 @@
                         <th>Building $ SQFT</th>
                         <th>Total $ SQFT</th>
                         <th>Sale Price</th>
+                        <th class="adjustment-header" title="CMA adjustment factor applied to comparable based on differences from target (size, renovation, lot, width, details)">Adjustment</th>
                         <th id="weight-header">Weight %</th>
                         <th>Sale Date</th>
                         <th>Tax Class</th>
