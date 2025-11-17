@@ -283,10 +283,11 @@ function calculatePropertyAdjustments(comp, target) {
     };
     
     // Size adjustment: ±2% per 100 sq ft difference
-    // Larger comps are typically worth more per SQFT (economies of scale)
+    // If comp is LARGER than target, adjust price DOWN (comp is worth more, so reduce its price)
+    // If comp is SMALLER than target, adjust price UP (comp is worth less, so increase its price)
     if (comp.buildingSQFT && target.buildingSQFT) {
         const sizeDiff = comp.buildingSQFT - target.buildingSQFT;
-        const sizeAdjustment = (sizeDiff / 100) * WEIGHTING_CONSTANTS.ADJUSTMENT_SIZE_PER_100SQFT;
+        const sizeAdjustment = -(sizeDiff / 100) * WEIGHTING_CONSTANTS.ADJUSTMENT_SIZE_PER_100SQFT;
         breakdown.size = sizeAdjustment;
         adjustmentFactor *= (1 + sizeAdjustment);
     }
@@ -305,19 +306,21 @@ function calculatePropertyAdjustments(comp, target) {
     }
     
     // Lot size adjustment: ±1% per 500 sq ft difference
-    // Larger lots command premium in Brooklyn brownstone market
+    // If comp has LARGER lot than target, adjust price DOWN (comp is worth more)
+    // If comp has SMALLER lot than target, adjust price UP (comp is worth less)
     if (comp.propertySQFT && target.propertySQFT) {
         const lotDiff = comp.propertySQFT - target.propertySQFT;
-        const lotAdjustment = (lotDiff / 500) * WEIGHTING_CONSTANTS.ADJUSTMENT_LOT_PER_500SQFT;
+        const lotAdjustment = -(lotDiff / 500) * WEIGHTING_CONSTANTS.ADJUSTMENT_LOT_PER_500SQFT;
         breakdown.lotSize = lotAdjustment;
         adjustmentFactor *= (1 + lotAdjustment);
     }
     
     // Width adjustment: ±1.5% per foot difference
-    // Wider properties (especially 20+ feet) command significant premiums
+    // If comp is WIDER than target, adjust price DOWN (comp is worth more)
+    // If comp is NARROWER than target, adjust price UP (comp is worth less)
     if (comp.buildingWidthFeet && target.buildingWidthFeet) {
         const widthDiff = comp.buildingWidthFeet - target.buildingWidthFeet;
-        const widthAdjustment = widthDiff * WEIGHTING_CONSTANTS.ADJUSTMENT_WIDTH_PER_FOOT;
+        const widthAdjustment = -widthDiff * WEIGHTING_CONSTANTS.ADJUSTMENT_WIDTH_PER_FOOT;
         breakdown.width = widthAdjustment;
         adjustmentFactor *= (1 + widthAdjustment);
     }
@@ -1149,32 +1152,10 @@ function setAppreciationRate(rate) {
 // Expose to global scope
 window.setAppreciationRate = setAppreciationRate;
 
-// Estimate base land value for a property (Brooklyn/Crown Heights market rates)
-function estimateBaseLandValue(lotSQFT) {
-    // Base land value: ~$100-$150 per SQFT for typical Crown Heights lot
-    // This represents the inherent value of the land itself (not including lot size premium/discount)
-    const baseLandValuePerSQFT = 100; // Conservative estimate - adjustments handle size differences
-    return lotSQFT * baseLandValuePerSQFT;
-}
-
-// Calculate building-only price per SQFT (with land value extracted)
-function calculateBuildingOnlyPriceSQFT(totalSalePrice, buildingSQFT, lotSQFT) {
-    if (!buildingSQFT || buildingSQFT === 0) return 0;
-    
-    // Estimate the base land value
-    const estimatedLandValue = estimateBaseLandValue(lotSQFT);
-    
-    // Subtract land value from total sale price to get building-only value
-    const buildingOnlyValue = totalSalePrice - estimatedLandValue;
-    
-    // Calculate building-only $/SQFT
-    return buildingOnlyValue / buildingSQFT;
-}
-
 // Calculate land adjustment based on lot size (qualitative, not percentage-based)
 function calculateLandAdjustment(targetLotSQFT, compLotSQFTs) {
     if (!compLotSQFTs || compLotSQFTs.length === 0) {
-        return { adjustment: 0, typical: 0, difference: 0, description: 'No data', baseLandValue: 0 };
+        return { adjustment: 0, typical: 0, difference: 0, description: 'No data' };
     }
     
     // Calculate typical (median) lot size from comps
@@ -1202,15 +1183,11 @@ function calculateLandAdjustment(targetLotSQFT, compLotSQFTs) {
         description = 'Typical lot size';
     }
     
-    // Calculate base land value for target property
-    const baseLandValue = estimateBaseLandValue(targetLotSQFT);
-    
     return {
         adjustment: Math.round(adjustment),
         typical: typicalLotSize,
         difference: lotDifference,
-        description: description,
-        baseLandValue: Math.round(baseLandValue)
+        description: description
     };
 }
 
@@ -1258,77 +1235,57 @@ function calculateAndRenderEstimates() {
 
     let avgBuildingPriceSQFT = 0;
     let avgTotalPriceSQFT = 0;
-    let avgBuildingOnlyPriceSQFT = 0; // Building-only (land value extracted)
 
     let medianBuildingPriceSQFT = 0;
     let medianTotalPriceSQFT = 0;
-    let medianBuildingOnlyPriceSQFT = 0; // Building-only (land value extracted)
     let stdDevBuildingPriceSQFT = 0;
     let stdDevTotalPriceSQFT = 0;
-    let stdDevBuildingOnlyPriceSQFT = 0;
 
     if (included.length > 0) {
-        // Apply property adjustment factors to each comparable
-        // This adjusts comp prices based on differences from target (size, renovation, lot, width, details)
-        // Industry-standard CMA (Comparative Market Analysis) approach
-        const adjustedComps = included.map(p => {
-            const adjustment = calculatePropertyAdjustments(p, targetProperty);
-            const adjustedPrice = p.adjustedSalePrice * adjustment.adjustmentFactor;
-            return {
-                ...p,
-                propertyAdjustment: adjustment,
-                adjustedPriceForComparison: adjustedPrice,
-                adjustedBuildingPriceSQFT: adjustedPrice / p.buildingSQFT,
-                adjustedTotalPriceSQFT: adjustedPrice / calculateTotalPropertySQFT(p.propertySQFT, p.buildingSQFT, p.buildingWidthFeet, p.buildingDepthFeet)
-            };
-        });
-        
-        // Extract values for median and std dev calculations
-        // Use adjusted prices for building and total $/SQFT
-        const buildingPrices = adjustedComps.map(p => p.adjustedBuildingPriceSQFT);
-        const totalPrices = adjustedComps.map(p => p.adjustedTotalPriceSQFT);
-        
-        // Calculate building-only prices (with land value extracted from each comp)
-        // Use adjusted prices for more accurate land value estimation
-        const buildingOnlyPrices = adjustedComps.map(p => 
-            calculateBuildingOnlyPriceSQFT(p.adjustedPriceForComparison, p.buildingSQFT, p.propertySQFT)
-        );
+        // Extract raw building $/SQFT values from comps (unadjusted)
+        // These are the actual sale prices divided by building SQFT
+        // NYC appraisers use these raw comp values, then apply qualitative adjustments separately
+        const buildingPrices = included.map(p => p.buildingPriceSQFT);
+        const totalPrices = included.map(p => p.totalPriceSQFT);
 
         // Calculate weights using centralized utility function
-        // Note: weights are based on original property characteristics (not adjusted prices)
         const weightPercentages = calculatePropertyWeights(included, targetProperty, weightingMethod);
         
         // Convert percentages back to raw weights (0-1 scale) for weighted average calculation
         const weights = weightPercentages.map(w => w / 100);
         const totalWeight = weights.reduce((sum, w) => sum + w, 0);
         
-        // Calculate weighted averages using adjusted prices
+        // Calculate weighted averages using RAW (unadjusted) comp $/SQFT
         if (weightingMethod === 'simple') {
             // Simple average
-            avgBuildingPriceSQFT = adjustedComps.reduce((sum, p) => sum + p.adjustedBuildingPriceSQFT, 0) / adjustedComps.length;
-            avgTotalPriceSQFT = adjustedComps.reduce((sum, p) => sum + p.adjustedTotalPriceSQFT, 0) / adjustedComps.length;
+            avgBuildingPriceSQFT = included.reduce((sum, p) => sum + p.buildingPriceSQFT, 0) / included.length;
+            avgTotalPriceSQFT = included.reduce((sum, p) => sum + p.totalPriceSQFT, 0) / included.length;
         } else {
-            // Weighted average using calculated weights and adjusted prices
-            avgBuildingPriceSQFT = adjustedComps.reduce((sum, p, i) => sum + (p.adjustedBuildingPriceSQFT * weights[i]), 0) / totalWeight;
-            avgTotalPriceSQFT = adjustedComps.reduce((sum, p, i) => sum + (p.adjustedTotalPriceSQFT * weights[i]), 0) / totalWeight;
+            // Weighted average using calculated weights
+            avgBuildingPriceSQFT = included.reduce((sum, p, i) => sum + (p.buildingPriceSQFT * weights[i]), 0) / totalWeight;
+            avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
         }
-        
-        // Calculate simple average for building-only prices (using adjusted prices)
-        avgBuildingOnlyPriceSQFT = buildingOnlyPrices.reduce((sum, v) => sum + v, 0) / buildingOnlyPrices.length;
 
-        // Calculate median and standard deviation (all using adjusted prices)
+        // Calculate median and standard deviation (using raw unadjusted prices)
         medianBuildingPriceSQFT = calculateMedian(buildingPrices);
         medianTotalPriceSQFT = calculateMedian(totalPrices);
-        medianBuildingOnlyPriceSQFT = calculateMedian(buildingOnlyPrices);
         stdDevBuildingPriceSQFT = calculateStdDev(buildingPrices, avgBuildingPriceSQFT);
         stdDevTotalPriceSQFT = calculateStdDev(totalPrices, avgTotalPriceSQFT);
-        stdDevBuildingOnlyPriceSQFT = calculateStdDev(buildingOnlyPrices, avgBuildingOnlyPriceSQFT);
     }
 
     // ===== NYC APPRAISAL METHOD: Building Interior SQFT × $/SQFT + Qualitative Adjustments =====
+    // This is how NYC appraisers actually value brownstones:
+    // 1. Interior SQFT × comp-based $/SQFT (land value already included in comp prices)
+    // 2. Add qualitative adjustments for lot size, width, location
     
     // Calculate target's building SQFT using Floors (PRIMARY METHOD)
     const targetBuildingSQFTWithFloors = targetProperty.buildingSQFT;
+    
+    // Base Value: Interior SQFT × Comp-Based $/SQFT
+    // Use building $/SQFT from adjusted comps (NOT building-only with land extracted)
+    // The comp prices already include land value - we don't need to extract and re-add it
+    const nycBaseValueWeighted = targetBuildingSQFTWithFloors * avgBuildingPriceSQFT;
+    const nycBaseValueMedian = targetBuildingSQFTWithFloors * medianBuildingPriceSQFT;
     
     // Calculate qualitative adjustments
     const compLotSizes = included.map(p => p.propertySQFT);
@@ -1337,29 +1294,18 @@ function calculateAndRenderEstimates() {
     const landAdj = calculateLandAdjustment(targetProperty.propertySQFT, compLotSizes);
     const widthAdj = calculateWidthPremium(targetProperty.buildingWidthFeet, compWidths);
     
-    // Building-Only Base Value (with land already extracted from comps)
-    const buildingOnlyValueWeighted = targetBuildingSQFTWithFloors * avgBuildingOnlyPriceSQFT;
-    const buildingOnlyValueMedian = targetBuildingSQFTWithFloors * medianBuildingOnlyPriceSQFT;
-    
-    // Add back estimated land value for target property
-    const targetBaseLandValue = landAdj.baseLandValue;
-    
-    // Base Value: Building-Only Value + Estimated Land Value
-    const baseValueWeighted = buildingOnlyValueWeighted + targetBaseLandValue;
-    const baseValueMedian = buildingOnlyValueMedian + targetBaseLandValue;
-    
     // Block/location adjustment (placeholder - can be enhanced with block-specific data)
     const blockAdjustment = 0; // TODO: Add block-by-block premium/discount data
     
-    // Total qualitative adjustments (land difference, width, block)
+    // Total qualitative adjustments (lot size difference, width premium, block)
     const totalAdjustments = landAdj.adjustment + widthAdj.premium + blockAdjustment;
     
     // NYC Appraisal Method: Base Value + Qualitative Adjustments
-    const nycEstimateWeighted = baseValueWeighted + totalAdjustments;
-    const nycEstimateMedian = baseValueMedian + totalAdjustments;
+    const nycEstimateWeighted = nycBaseValueWeighted + totalAdjustments;
+    const nycEstimateMedian = nycBaseValueMedian + totalAdjustments;
     
-    // Confidence intervals for NYC method (based on building-only SQFT variance + adjustment uncertainty)
-    const baseStdDev = stdDevBuildingOnlyPriceSQFT * targetBuildingSQFTWithFloors;
+    // Confidence intervals for NYC method (based on building SQFT variance + adjustment uncertainty)
+    const baseStdDev = stdDevBuildingPriceSQFT * targetBuildingSQFTWithFloors;
     const adjustmentUncertainty = Math.abs(totalAdjustments) * 0.2; // 20% uncertainty on adjustments
     const totalStdDev = baseStdDev + adjustmentUncertainty;
     
@@ -1531,28 +1477,18 @@ function calculateAndRenderEstimates() {
         <div class="estimate-box primary">
             <h4>🏆 NYC Appraisal Method</h4>
             <div class="estimate-value">${formatCurrency(nycEstimateMedian)}</div>
-            <div class="estimate-formula">Industry-Standard: Building SQFT × $/SQFT + Land + Adjustments</div>
+            <div class="estimate-formula">Industry-Standard: Interior SQFT × Comp $/SQFT + Qualitative Adjustments</div>
             <div class="confidence-interval" style="margin-top: 15px; border-top: 1px solid #e0e0e0; padding-top: 10px;">
-                <div class="ci-row" style="font-weight: bold; color: #2c3e50;"><span class="ci-label">Building Value (Land Extracted)</span> <span class="ci-value">${formatCurrency(buildingOnlyValueMedian)}</span></div>
-                <div class="estimate-formula" style="font-size: 0.9em; color: #7f8c8d; margin-bottom: 5px;">
-                    ${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(medianBuildingOnlyPriceSQFT)}/SQFT (comps with land removed)
+                <div class="ci-row" style="font-weight: bold; color: #2c3e50;">
+                    <span class="ci-label">Base Value (Interior SQFT × $/SQFT)</span> 
+                    <span class="ci-value">${formatCurrency(nycBaseValueMedian)}</span>
                 </div>
-                
-                <div class="ci-row" style="font-weight: 600; color: #3498db; margin-top: 8px;">
-                    <span class="ci-label">+ Estimated Land Value</span> 
-                    <span class="ci-value">+${formatCurrency(targetBaseLandValue)}</span>
-                </div>
-                <div class="estimate-formula" style="font-size: 0.85em; color: #7f8c8d; margin-left: 15px; margin-bottom: 5px;">
-                    ${formatNumber(targetProperty.propertySQFT, 0)} SQFT × $100/SQFT base land value
-                </div>
-                
-                <div class="ci-row" style="font-weight: bold; color: #2c3e50; border-top: 1px solid #e0e0e0; padding-top: 8px; margin-top: 8px;">
-                    <span class="ci-label">= Base Value (Building + Land)</span> 
-                    <span class="ci-value">${formatCurrency(baseValueMedian)}</span>
+                <div class="estimate-formula" style="font-size: 0.9em; color: #7f8c8d; margin-bottom: 10px;">
+                    ${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(medianBuildingPriceSQFT)}/SQFT
                 </div>
                 
                 <div class="ci-row" style="font-weight: 600; color: ${landAdj.adjustment >= 0 ? '#27ae60' : '#e74c3c'}; margin-top: 8px;">
-                    <span class="ci-label">+ Land Adjustment</span> 
+                    <span class="ci-label">+ Lot Size Adjustment</span> 
                     <span class="ci-value">${landAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(landAdj.adjustment)}</span>
                 </div>
                 <div class="estimate-formula" style="font-size: 0.85em; color: #7f8c8d; margin-left: 15px;">
@@ -1576,7 +1512,7 @@ function calculateAndRenderEstimates() {
                 
                 <div style="border-top: 2px solid #3498db; margin: 12px 0; padding-top: 10px;">
                     <div class="ci-row" style="font-weight: bold; font-size: 1.05em; color: #2c3e50;">
-                        <span class="ci-label">Total Adjustments:</span> 
+                        <span class="ci-label">Total Qualitative Adjustments:</span> 
                         <span class="ci-value" style="color: ${totalAdjustments >= 0 ? '#27ae60' : '#e74c3c'};">${totalAdjustments >= 0 ? '+' : ''}${formatCurrency(totalAdjustments)}</span>
                     </div>
                 </div>
