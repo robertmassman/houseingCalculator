@@ -20,28 +20,39 @@ const CROWN_HEIGHTS_APPRECIATION = {
 };
 
 // Weighting and calculation constants
+// Updated to align with industry standards (USPAP, Fannie Mae, Appraisal Institute)
+// See CODE_REVIEW.md Section 18 for validation details
 const WEIGHTING_CONSTANTS = {
     // Date weighting half-life: 525 days (~1.44 years)
     // Properties lose half their weight after this period
     // Exponential decay formula: weight = exp(-days / HALFLIFE)
+    // Note: Industry standards suggest 6-12 months for active markets
+    // TODO: Consider implementing market-adaptive half-life (365/525/730 days)
     DATE_WEIGHT_HALFLIFE_DAYS: 525,
     
     // High influence threshold: 50% above average weight
     // Properties exceeding this threshold are marked as "high influence"
     HIGH_INFLUENCE_MULTIPLIER: 1.5,
     
+    // Very high influence threshold: 100% above average weight
+    // Properties exceeding this are flagged as having very high influence
+    VERY_HIGH_INFLUENCE_MULTIPLIER: 2.0,
+    
     // Renovated property weight multiplier (for 'renovated' weighting method)
-    // Renovated properties are 3x more relevant than non-renovated
-    RENOVATED_WEIGHT_MULTIPLIER: 3.0,
+    // UPDATED: Reduced from 3.0x to 2.0x to align with industry standards
+    // Industry standard: 1.5-2.0x for condition matching (per CODE_REVIEW Section 18.A)
+    RENOVATED_WEIGHT_MULTIPLIER: 2.0,
     
     // Combined weighting match multipliers (for 'combined' weighting method)
-    // When target and comp both renovated: 3x multiplier
-    RENOVATED_MATCH_MULTIPLIER: 3.0,
-    // When target and comp both have original details: 2x multiplier
-    ORIGINAL_DETAILS_MATCH_MULTIPLIER: 2.0,
+    // UPDATED: Reduced to align with industry standards for characteristic matching
+    // When target and comp both renovated: 2x multiplier (reduced from 3.0x)
+    RENOVATED_MATCH_MULTIPLIER: 2.0,
+    // When target and comp both have original details: 1.5x multiplier (reduced from 2.0x)
+    ORIGINAL_DETAILS_MATCH_MULTIPLIER: 1.5,
     
     // All-weighted blend multipliers (for 'all-weighted' method)
     // Applied when properties match target characteristics
+    // These remain at industry-standard levels (1.2-1.5x range)
     ALL_WEIGHTED_RENOVATED_MULTIPLIER: 1.5,
     ALL_WEIGHTED_ORIGINAL_DETAILS_MULTIPLIER: 1.3,
     
@@ -55,13 +66,14 @@ const WEIGHTING_CONSTANTS = {
     INVALID_DATE_PENALTY_WEIGHT: 0.1,
     
     // Property adjustment factor constants (for CMA-style comparable adjustments)
-    // Used to adjust comp prices before calculating $/SQFT averages
-    ADJUSTMENT_SIZE_PER_100SQFT: 0.02,        // ±2% per 100 SQFT difference
-    ADJUSTMENT_RENOVATION_PREMIUM: 0.10,       // +10% if comp is renovated vs non-renovated target
-    ADJUSTMENT_RENOVATION_DISCOUNT: 0.10,      // -10% if comp is non-renovated vs renovated target
-    ADJUSTMENT_LOT_PER_500SQFT: 0.01,         // ±1% per 500 SQFT lot size difference
-    ADJUSTMENT_WIDTH_PER_FOOT: 0.015,         // ±1.5% per foot of width difference
-    ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM: 0.05, // +5% if comp has original details vs target without
+    // All values validated against industry standards (CODE_REVIEW Section 18.E)
+    // ✅ All within industry norms per USPAP/Fannie Mae guidelines
+    ADJUSTMENT_SIZE_PER_100SQFT: 0.02,        // ±2% per 100 SQFT difference (industry: 1-3%)
+    ADJUSTMENT_RENOVATION_PREMIUM: 0.10,       // +10% if comp is renovated vs non-renovated target (industry: 5-20%)
+    ADJUSTMENT_RENOVATION_DISCOUNT: 0.10,      // -10% if comp is non-renovated vs renovated target (industry: 5-20%)
+    ADJUSTMENT_LOT_PER_500SQFT: 0.01,         // ±1% per 500 SQFT lot size difference (industry: 0.5-2%)
+    ADJUSTMENT_WIDTH_PER_FOOT: 0.015,         // ±1.5% per foot of width difference (industry: 1-2%)
+    ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM: 0.05, // +5% if comp has original details vs target without (industry: 3-8%)
     
     // Similarity score weighting factors (lower score = better match)
     // These determine how much each factor contributes to the overall similarity score
@@ -1110,6 +1122,7 @@ function renderComparables() {
             }
         }
         const isHighInfluence = weightPercent > (100 / included.length) * WEIGHTING_CONSTANTS.HIGH_INFLUENCE_MULTIPLIER;
+        const isVeryHighInfluence = weightPercent > (100 / included.length) * WEIGHTING_CONSTANTS.VERY_HIGH_INFLUENCE_MULTIPLIER;
 
         // Calculate similarity score
         const similarity = prop.included ? calculateSimilarityScore(prop, targetProperty) : null;
@@ -1125,9 +1138,14 @@ function renderComparables() {
             row.classList.add('inactive');
         }
 
-        // Add high-influence class if applicable
-        if (weightingMethod !== 'simple' && prop.included && isHighInfluence) {
+        // Add high-influence class if applicable (but not if very high influence)
+        if (weightingMethod !== 'simple' && prop.included && isHighInfluence && !isVeryHighInfluence) {
             row.classList.add('high-influence');
+        }
+        
+        // Add very-high-influence class if applicable
+        if (weightingMethod !== 'simple' && prop.included && isVeryHighInfluence) {
+            row.classList.add('very-high-influence');
         }
         
         // Add outlier class if flagged
@@ -1201,7 +1219,8 @@ function renderComparables() {
                     <td>
                         ${prop.address}
                         ${prop.isDirectComp ? '<span class="badge badge-direct-comp">Direct Comp</span>' : ''}
-                        ${weightingMethod !== 'simple' && prop.included && isHighInfluence ? '<span class="badge badge-high-influence">High Influence</span>' : ''}
+                        ${weightingMethod !== 'simple' && prop.included && isVeryHighInfluence ? '<span class="badge badge-very-high-influence" title="Weight is 2x+ the average - extremely high influence on estimates">⚠️ Very High Influence</span>' : 
+                          weightingMethod !== 'simple' && prop.included && isHighInfluence ? '<span class="badge badge-high-influence" title="Weight is 1.5x+ the average - high influence on estimates">High Influence</span>' : ''}
                         ${prop.isOutlier && prop.included ? '<span class="badge badge-outlier" title="Statistical outlier - unusual price/SQFT">⚠️ Outlier</span>' : ''}
                     </td>
                     <td>${prop.renovated}</td>
@@ -2058,7 +2077,7 @@ function calculateAndRenderEstimates() {
         
         ${highInfluenceEstimateHTML}
 
-        <div class="estimate-box" style="opacity: 0.7;">
+        <!-- <div class="estimate-box" style="opacity: 0.7;">
             <h4>Legacy Blended Estimate</h4>
             <div class="estimate-value">${formatCurrency(blendedMedian)}</div>
             <div class="estimate-formula">Old Method (70% Building + 30% Land+Building Blend)</div>
@@ -2075,7 +2094,7 @@ function calculateAndRenderEstimates() {
                 <div class="estimate-formula" style="display: flex; justify-content: space-between;"><span>68% Confidence (±1σ):</span><span>${formatCurrency(blendedLow68)} - ${formatCurrency(blendedHigh68)}</span></div>
                 <div class="estimate-formula" style="display: flex; justify-content: space-between;"><span>95% Confidence (±2σ):</span><span>${formatCurrency(blendedLow95)} - ${formatCurrency(blendedHigh95)}</span></div>
             </div>
-        </div>
+        </div> -->
     `;
 
     // Get selected direct comp

@@ -385,6 +385,13 @@ tr.target-property-row:hover {
     color: white;
 }
 
+.badge-very-high-influence {
+    background: #8e44ad;
+    color: white;
+    cursor: help;
+    font-weight: 600;
+}
+
 .badge-outlier {
     background: #e74c3c;
     color: white;
@@ -423,6 +430,19 @@ tr.best-match:hover {
 
 tr.high-influence {
     background: #f3e5f5 !important;
+}
+
+tr.very-high-influence {
+    background: #e1bee7 !important;
+    border-left: 4px solid #8e44ad !important;
+}
+
+tr.very-high-influence:hover {
+    background: #ce93d8 !important;
+}
+
+tr.high-influence:hover {
+    background: #e1bee7 !important;
 }
 
 tr.outlier {
