@@ -13,17 +13,21 @@
         <h1>Crown Heights Property Estimator</h1>
         <p style="color: #666; margin-bottom: 20px;">Dynamic property valuation calculator with comparable analysis</p>
         
-        <h2>Update Target</h2>
+       <!-- <h2>Update Target</h2>
         <select id="target-property-select" onchange="changeTargetProperty()"
             style="margin-bottom: 15px; padding: 8px 12px; border-radius: 6px; border: 1px solid #3498db; background: white; color: #2c3e50; font-size: 14px; cursor: pointer;">
             <option value="0">Select a property...</option>
-        </select>
+        </select> -->
 
         <!-- Target Property Section -->
         <h2>Target Property</h2>
         <div class="target-property">
             
-            <h3 id="target-address">Loading...</h3>
+            <!--<h3 id="target-address">Loading...</h3> -->
+            <select id="target-property-select" onchange="changeTargetProperty()"
+                style="margin-bottom: 15px; padding: 8px 12px; border-radius: 6px; border: 1px solid #3498db; background: white; color: #2c3e50; font-size: 14px; cursor: pointer;">
+                <option value="0">Select a property...</option>
+            </select>
             <div class="property-grid" id="target-property-fields"></div>
         </div>
 
@@ -32,7 +36,7 @@
             <h2 style="margin-top: 0; border: none;">Estimated Sale Price</h2>
             
             <!-- Appreciation Rate Control -->
-            <div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #3498db;">
+            <!-- <div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #3498db;">
                 <label style="display: flex; align-items: center; gap: 10px; font-weight: 500; color: #2c3e50;">
                     <span style="min-width: 180px;">Annual Appreciation Rate:</span>
                     <input type="number" id="appreciation-rate" value="5.0" min="0" max="20" step="0.5" 
@@ -51,7 +55,8 @@
                 <button class="weight-btn" data-method="renovated" onclick="setWeightingMethod('renovated')" style="background-color: #e91e63;">Renovated</button>
                 <button class="weight-btn" data-method="combined" onclick="setWeightingMethod('combined')" style="background-color: #8e44ad;">Combined (Reno+Details)</button>
                 <button class="weight-btn" data-method="all-weighted" onclick="setWeightingMethod('all-weighted')" style="background-color: #16a085;">All-Weighted Blend</button>
-            </div>
+            </div> -->
+
             <div id="estimates-container"></div>
             
             <h3>Direct Comp Reference Values</h3>
@@ -94,8 +99,8 @@
                         <th>Property SQFT</th>
                         <th>Building Width</th>
                         <th>Building Depth</th>
-                        <th>Building SQFT</th>
                         <th>Floors</th>
+                        <th>Building SQFT</th>
                         <th>Building $ SQFT</th>
                         <th>Total $ SQFT</th>
                         <th>Sale Price</th>

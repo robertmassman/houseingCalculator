@@ -73,6 +73,12 @@ function calculateBuildingSQFT(widthFeet, depthFeet, floors) {
     return (widthFeet * depthFeet) * floors;
 }
 
+// Calculate Total $ SQFT
+function calculateTotalPropertySQFT(propertySQFT, buildingSQFT, buildingWidthFeet, buildingDepthFeet) {
+    const buildingFootprint = buildingWidthFeet * buildingDepthFeet;
+    return (propertySQFT - buildingFootprint) + buildingSQFT;
+}
+
 // Calculate Building $ SQFT
 function calculateBuildingPriceSQFT(price, buildingSQFT) {
     if (!buildingSQFT || buildingSQFT === 0) return 0;
@@ -81,8 +87,7 @@ function calculateBuildingPriceSQFT(price, buildingSQFT) {
 
 // Calculate Total $ SQFT
 function calculateTotalPriceSQFT(price, propertySQFT, buildingSQFT, buildingWidthFeet, buildingDepthFeet) {
-    const buildingFootprint = buildingWidthFeet * buildingDepthFeet;
-    const total = (propertySQFT - buildingFootprint) + buildingSQFT;
+    const total = calculateTotalPropertySQFT(propertySQFT, buildingSQFT, buildingWidthFeet, buildingDepthFeet);
     if (!total || total === 0) return 0;
     return price / total;
 }
@@ -150,6 +155,7 @@ function processImportedProperty(prop) {
 // Load data from imported objects
 function loadData() {
     try {
+        
         // Process comparable properties
         comparableProperties = importedComps.map((prop, index) => {
             const processed = processImportedProperty(prop);
@@ -215,7 +221,10 @@ function loadData() {
         
     } catch (error) {
         console.error('Error loading data:', error);
-        alert('Error loading imported data. Please check the console for details.');
+        console.error('Error stack:', error.stack);
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        alert('Error loading imported data: ' + error.message + '\n\nPlease check the console for details.');
     }
 }
 
@@ -223,7 +232,7 @@ function loadData() {
 function renderTargetProperty() {
     if (!targetProperty) return;
     
-    document.getElementById('target-address').textContent = targetProperty.address;
+    //document.getElementById('target-address').textContent = targetProperty.address;
     
     const fieldGroups = [
         {
@@ -326,9 +335,9 @@ function renderComparables() {
     const totalSizeWeight = sizeWeights.reduce((sum, w) => sum + w, 0);
     
     // Calculate total property size weights (property SQFT + building SQFT)
-    const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
+    const targetTotalSize = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
     const totalSizeWeights = included.map(p => {
-        const compTotalSize = p.propertySQFT + p.buildingSQFT;
+        const compTotalSize = calculateTotalPropertySQFT(p.propertySQFT, p.buildingSQFT, p.buildingWidthFeet, p.buildingDepthFeet);
         const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
         return 1 / (1 + totalSizeDiff / targetTotalSize);
     });
@@ -434,8 +443,8 @@ function renderComparables() {
                 <td>${formatNumber(prop.propertySQFT, 2)}</td>
                 <td>${formatNumber(prop.buildingWidthFeet, 2)}</td>
                 <td>${formatNumber(prop.buildingDepthFeet, 2)}</td>
-                <td>${formatNumber(prop.buildingSQFT, 2)}</td>
                 <td>${prop.floors}</td>
+                <td>${formatNumber(prop.buildingSQFT, 2)}</td>
                 <td>-</td>
                 <td>-</td>
                 <td>-</td>
@@ -526,8 +535,8 @@ function renderComparables() {
                     <td>${formatNumber(prop.propertySQFT, 2)}</td>
                     <td>${formatNumber(prop.buildingWidthFeet, 2)}</td>
                     <td>${formatNumber(prop.buildingDepthFeet, 2)}</td>
-                    <td>${formatNumber(prop.buildingSQFT, 2)}</td>
                     <td>${prop.floors}</td>
+                    <td>${formatNumber(prop.buildingSQFT, 2)}</td>
                     <td>${formatCurrency(prop.buildingPriceSQFT)}</td>
                     <td>${formatCurrency(prop.totalPriceSQFT)}</td>
                     <td>
@@ -576,13 +585,13 @@ function sortPropertiesByColumn(properties, columnIndex, direction) {
                 aVal = a.buildingDepthFeet;
                 bVal = b.buildingDepthFeet;
                 break;
-            case 8: // Building SQFT
-                aVal = a.buildingSQFT;
-                bVal = b.buildingSQFT;
-                break;
-            case 9: // Floors
+            case 8: // Floors
                 aVal = a.floors;
                 bVal = b.floors;
+                break;
+            case 9: // Building SQFT
+                aVal = a.buildingSQFT;
+                bVal = b.buildingSQFT;
                 break;
             case 10: // Building $ SQFT
                 aVal = a.buildingPriceSQFT;
@@ -954,9 +963,9 @@ function calculateAndRenderEstimates() {
             avgTotalPriceSQFT = included.reduce((sum, p, i) => sum + (p.totalPriceSQFT * weights[i]), 0) / totalWeight;
         } else if (weightingMethod === 'total-size') {
             // Total property size weighted average (property SQFT + building SQFT)
-            const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
+            const targetTotalSize = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
             const weights = included.map(p => {
-                const compTotalSize = p.propertySQFT + p.buildingSQFT;
+                const compTotalSize = calculateTotalPropertySQFT(p.propertySQFT, p.buildingSQFT, p.buildingWidthFeet, p.buildingDepthFeet);
                 const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
                 return 1 / (1 + totalSizeDiff / targetTotalSize);
             });
@@ -1067,22 +1076,23 @@ function calculateAndRenderEstimates() {
     const estimateAHigh95 = targetBuildingSQFTWithFloors * (avgBuildingPriceSQFT + (2 * stdDevBuildingPriceSQFT));
     
     // Method B: (Property SQFT + Building SQFT) × Average Total $ SQFT
-    const estimateB = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * avgTotalPriceSQFT;
-    const estimateBMedian = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * medianTotalPriceSQFT;
+    const targetTotalSQFT = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
+    const estimateB = targetTotalSQFT * avgTotalPriceSQFT;
+    const estimateBMedian = targetTotalSQFT * medianTotalPriceSQFT;
     // 68% Confidence Interval (±1 std dev)
-    const estimateBLow68 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT - stdDevTotalPriceSQFT);
-    const estimateBHigh68 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT + stdDevTotalPriceSQFT);
+    const estimateBLow68 = targetTotalSQFT * (avgTotalPriceSQFT - stdDevTotalPriceSQFT);
+    const estimateBHigh68 = targetTotalSQFT * (avgTotalPriceSQFT + stdDevTotalPriceSQFT);
     // 95% Confidence Interval (±2 std dev)
-    const estimateBLow95 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT - (2 * stdDevTotalPriceSQFT));
-    const estimateBHigh95 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (avgTotalPriceSQFT + (2 * stdDevTotalPriceSQFT));
+    const estimateBLow95 = targetTotalSQFT * (avgTotalPriceSQFT - (2 * stdDevTotalPriceSQFT));
+    const estimateBHigh95 = targetTotalSQFT * (avgTotalPriceSQFT + (2 * stdDevTotalPriceSQFT));
     
-    // Blended Estimate: 60% Method A + 40% Method B
-    const blendedEstimate = (estimateA * 0.6) + (estimateB * 0.4);
-    const blendedMedian = (estimateAMedian * 0.6) + (estimateBMedian * 0.4);
-    const blendedLow68 = (estimateALow68 * 0.6) + (estimateBLow68 * 0.4);
-    const blendedHigh68 = (estimateAHigh68 * 0.6) + (estimateBHigh68 * 0.4);
-    const blendedLow95 = (estimateALow95 * 0.6) + (estimateBLow95 * 0.4);
-    const blendedHigh95 = (estimateAHigh95 * 0.6) + (estimateBHigh95 * 0.4);
+    // Blended Estimate: 70% Method A + 30% Method B
+    const blendedEstimate = (estimateA * 0.7) + (estimateB * 0.3);
+    const blendedMedian = (estimateAMedian * 0.7) + (estimateBMedian * 0.3);
+    const blendedLow68 = (estimateALow68 * 0.7) + (estimateBLow68 * 0.3);
+    const blendedHigh68 = (estimateAHigh68 * 0.7) + (estimateBHigh68 * 0.3);
+    const blendedLow95 = (estimateALow95 * 0.7) + (estimateBLow95 * 0.3);
+    const blendedHigh95 = (estimateAHigh95 * 0.7) + (estimateBHigh95 * 0.3);
     
     // Calculate High Influence Properties Estimate (only if weighted method and high influence props exist)
     let highInfluenceEstimateHTML = '';
@@ -1090,7 +1100,7 @@ function calculateAndRenderEstimates() {
         // Recalculate weights to identify high influence properties
         const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
         const targetSize = targetProperty.buildingSQFT;
-        const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
+        const targetTotalSize = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
         
         // Calculate all weight arrays
         const sizeWeights = included.map(p => {
@@ -1101,7 +1111,7 @@ function calculateAndRenderEstimates() {
         const totalSizeWeight = sizeWeights.reduce((sum, w) => sum + w, 0);
         
         const totalSizeWeights = included.map(p => {
-            const compTotalSize = p.propertySQFT + p.buildingSQFT;
+            const compTotalSize = calculateTotalPropertySQFT(p.propertySQFT, p.buildingSQFT, p.buildingWidthFeet, p.buildingDepthFeet);
             const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
             return 1 / (1 + totalSizeDiff / targetTotalSize);
         });
@@ -1189,19 +1199,19 @@ function calculateAndRenderEstimates() {
             const hiEstimateALow95 = targetBuildingSQFTWithFloors * (hiAvgBuildingPriceSQFT - (2 * hiStdDevBuildingPriceSQFT));
             const hiEstimateAHigh95 = targetBuildingSQFTWithFloors * (hiAvgBuildingPriceSQFT + (2 * hiStdDevBuildingPriceSQFT));
             
-            const hiEstimateB = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * hiAvgTotalPriceSQFT;
-            const hiEstimateBMedian = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * hiMedianTotalPriceSQFT;
-            const hiEstimateBLow68 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (hiAvgTotalPriceSQFT - hiStdDevTotalPriceSQFT);
-            const hiEstimateBHigh68 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (hiAvgTotalPriceSQFT + hiStdDevTotalPriceSQFT);
-            const hiEstimateBLow95 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (hiAvgTotalPriceSQFT - (2 * hiStdDevTotalPriceSQFT));
-            const hiEstimateBHigh95 = (targetProperty.propertySQFT + targetProperty.buildingSQFT) * (hiAvgTotalPriceSQFT + (2 * hiStdDevTotalPriceSQFT));
+            const hiEstimateB = targetTotalSQFT * hiAvgTotalPriceSQFT;
+            const hiEstimateBMedian = targetTotalSQFT * hiMedianTotalPriceSQFT;
+            const hiEstimateBLow68 = targetTotalSQFT * (hiAvgTotalPriceSQFT - hiStdDevTotalPriceSQFT);
+            const hiEstimateBHigh68 = targetTotalSQFT * (hiAvgTotalPriceSQFT + hiStdDevTotalPriceSQFT);
+            const hiEstimateBLow95 = targetTotalSQFT * (hiAvgTotalPriceSQFT - (2 * hiStdDevTotalPriceSQFT));
+            const hiEstimateBHigh95 = targetTotalSQFT * (hiAvgTotalPriceSQFT + (2 * hiStdDevTotalPriceSQFT));
             
-            const hiBlendedEstimate = (hiEstimateA * 0.6) + (hiEstimateB * 0.4);
-            const hiBlendedMedian = (hiEstimateAMedian * 0.6) + (hiEstimateBMedian * 0.4);
-            const hiBlendedLow68 = (hiEstimateALow68 * 0.6) + (hiEstimateBLow68 * 0.4);
-            const hiBlendedHigh68 = (hiEstimateAHigh68 * 0.6) + (hiEstimateBHigh68 * 0.4);
-            const hiBlendedLow95 = (hiEstimateALow95 * 0.6) + (hiEstimateBLow95 * 0.4);
-            const hiBlendedHigh95 = (hiEstimateAHigh95 * 0.6) + (hiEstimateBHigh95 * 0.4);
+            const hiBlendedEstimate = (hiEstimateA * 0.7) + (hiEstimateB * 0.3);
+            const hiBlendedMedian = (hiEstimateAMedian * 0.7) + (hiEstimateBMedian * 0.3);
+            const hiBlendedLow68 = (hiEstimateALow68 * 0.7) + (hiEstimateBLow68 * 0.3);
+            const hiBlendedHigh68 = (hiEstimateAHigh68 * 0.7) + (hiEstimateBHigh68 * 0.3);
+            const hiBlendedLow95 = (hiEstimateALow95 * 0.7) + (hiEstimateBLow95 * 0.3);
+            const hiBlendedHigh95 = (hiEstimateAHigh95 * 0.7) + (hiEstimateBHigh95 * 0.3);
             
             highInfluenceEstimateHTML = `
                 <div class="estimate-box high-influence-estimate">
@@ -1223,24 +1233,18 @@ function calculateAndRenderEstimates() {
         <div class="estimate-box primary">
             <h4>Recommended Blended Estimate</h4>
             <div class="estimate-value">${formatCurrency(blendedMedian)}</div>
-            <div class="estimate-formula">Median-Based (60% Method A + 40% Method B)</div>
+            <div class="estimate-formula">Median-Based (70% Method A + 30% Method B)</div>
             <div class="confidence-interval">
                 <div class="ci-row"><span class="ci-label">Weighted Average:</span> <span class="ci-value">${formatCurrency(blendedEstimate)}</span></div>
                 <div class="ci-row"><span class="ci-label">68% Confidence (±1σ):</span> <span class="ci-value">${formatCurrency(blendedLow68)} - ${formatCurrency(blendedHigh68)}</span></div>
                 <div class="ci-row"><span class="ci-label">95% Confidence (±2σ):</span> <span class="ci-value">${formatCurrency(blendedLow95)} - ${formatCurrency(blendedHigh95)}</span></div>
             </div>
+            <div class="estimate-formula" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e0e0e0; font-size: 13px; line-height: 1.6;">
+                <div style="display: flex; justify-content: space-between;"><span>Method A (Building-Based): ${formatCurrency(estimateAMedian)}</span> <span>${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(medianBuildingPriceSQFT)} Building Median $ SQFT</span></div>
+                <div style="display: flex; justify-content: space-between;"><span>Method B (Total Property-Based): ${formatCurrency(estimateBMedian)}</span> <span>${formatNumber(targetTotalSQFT, 2)} SQFT × ${formatCurrency(medianTotalPriceSQFT)} Total Median $ SQFT</span></div>
+            </div>
         </div>
         ${highInfluenceEstimateHTML}
-        <div class="estimate-box minimized">
-            <h4>Method A: Building-Based</h4>
-            <div class="estimate-value">${formatCurrency(estimateAMedian)}</div>
-            <div class="average-count" style="margin-top: 5px;">${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(medianBuildingPriceSQFT)}</div>
-        </div>
-        <div class="estimate-box minimized">
-            <h4>Method B: Total Property-Based</h4>
-            <div class="estimate-value">${formatCurrency(estimateBMedian)}</div>
-            <div class="average-count" style="margin-top: 5px;">(${formatNumber(targetProperty.propertySQFT, 2)} + ${formatNumber(targetProperty.buildingSQFT, 2)}) SQFT × ${formatCurrency(medianTotalPriceSQFT)}</div>
-        </div>
     `;
     
     // Get selected direct comp
@@ -1248,114 +1252,22 @@ function calculateAndRenderEstimates() {
     const directCompValue = directCompProp ? directCompProp.adjustedSalePrice : 0;
     const directCompAddress = directCompProp ? directCompProp.address : 'None selected';
     
-    // Calculate weighted blend between direct comp and market average based on selected weighting method
+    // Use direct comp's actual $/SQFT values (no blending)
     let directCompBuildingPriceSQFT = 0;
     let directCompTotalPriceSQFT = 0;
     let directCompEstimate = 0;
     let directCompTotalEstimate = 0;
+    let directCompTargetTotalSQFT = 0;
     
-    if (directCompProp && included.length > 0) {
-        // Calculate weight factor for the direct comp based on selected weighting method
-        let directCompWeight = 1.0;
+    if (directCompProp) {
+        // Use the direct comp's actual $/SQFT values without any blending
+        directCompBuildingPriceSQFT = directCompProp.buildingPriceSQFT;
+        directCompTotalPriceSQFT = directCompProp.totalPriceSQFT;
         
-        if (weightingMethod === 'price') {
-            // Price weighting: higher prices get more weight
-            const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
-            directCompWeight = (directCompProp.adjustedSalePrice / totalPrice) * included.length;
-        } else if (weightingMethod === 'size') {
-            // Size similarity weighting: closer to target size = higher weight
-            const targetSize = targetProperty.buildingSQFT;
-            const compSize = directCompProp.buildingSQFT;
-            const sizeDiff = Math.abs(compSize - targetSize);
-            directCompWeight = 1 / (1 + sizeDiff / targetSize);
-            // Normalize against average weight
-            const avgSizeWeight = 1 / included.length;
-            directCompWeight = (directCompWeight / avgSizeWeight);
-        } else if (weightingMethod === 'total-size') {
-            // Total property size weighting
-            const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
-            const compTotalSize = directCompProp.propertySQFT + directCompProp.buildingSQFT;
-            const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
-            directCompWeight = 1 / (1 + totalSizeDiff / targetTotalSize);
-            const avgSizeWeight = 1 / included.length;
-            directCompWeight = (directCompWeight / avgSizeWeight);
-        } else if (weightingMethod === 'date') {
-            // Date recency weighting: more recent = higher weight
-            if (directCompProp.sellDate !== 'N/A' && directCompProp.sellDate) {
-                const dateParts = directCompProp.sellDate.split('/');
-                if (dateParts.length === 3) {
-                    let year = parseInt(dateParts[2]);
-                    if (year < 100) year += year < 50 ? 2000 : 1900;
-                    const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-                    const today = new Date();
-                    const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
-                    directCompWeight = Math.exp(-daysSinceSale / 525);
-                    const avgDateWeight = 1 / included.length;
-                    directCompWeight = (directCompWeight / avgDateWeight);
-                } else {
-                    directCompWeight = 0.1;
-                }
-            } else {
-                directCompWeight = 0.1;
-            }
-        } else if (weightingMethod === 'renovated') {
-            // Renovation status weighting
-            directCompWeight = directCompProp.renovated === 'Yes' ? 3.0 : 1.0;
-            const avgRenovatedWeight = 1 / included.length;
-            directCompWeight = (directCompWeight / avgRenovatedWeight);
-        } else if (weightingMethod === 'combined') {
-            // Combined weighting (renovated + originalDetails)
-            directCompWeight = 1.0;
-            if (targetProperty.renovated === directCompProp.renovated) directCompWeight *= 3.0;
-            if (targetProperty.originalDetails === directCompProp.originalDetails) directCompWeight *= 2.0;
-            const avgCombinedWeight = 1 / included.length;
-            directCompWeight = (directCompWeight / avgCombinedWeight);
-        } else if (weightingMethod === 'all-weighted') {
-            // All-weighted blend (combines all factors)
-            directCompWeight = 1.0;
-            
-            // Price factor
-            const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
-            if (totalPrice > 0) directCompWeight *= (directCompProp.adjustedSalePrice / totalPrice) * included.length;
-            
-            // Size similarity factor
-            const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
-            const compSize = directCompProp.floors * (directCompProp.buildingWidthFeet * directCompProp.buildingDepthFeet);
-            const sizeDiff = Math.abs(compSize - targetSize);
-            const sizeWeight = 1 / (1 + sizeDiff / targetSize);
-            directCompWeight *= sizeWeight * included.length;
-            
-            // Date recency factor
-            if (directCompProp.sellDate !== 'N/A' && directCompProp.sellDate) {
-                const dateParts = directCompProp.sellDate.split('/');
-                if (dateParts.length === 3) {
-                    let year = parseInt(dateParts[2]);
-                    if (year < 100) year += year < 50 ? 2000 : 1900;
-                    const saleDate = new Date(year, parseInt(dateParts[0]) - 1, parseInt(dateParts[1]));
-                    const today = new Date();
-                    const daysSinceSale = (today - saleDate) / (1000 * 60 * 60 * 24);
-                    const dateWeight = Math.exp(-daysSinceSale / 525);
-                    directCompWeight *= dateWeight * included.length;
-                }
-            }
-            
-            // Qualitative matches
-            if (directCompProp.renovated === targetProperty.renovated) directCompWeight *= 1.5;
-            if (directCompProp.originalDetails === targetProperty.originalDetails) directCompWeight *= 1.3;
-        }
-        
-        // Blend between direct comp's $/SQFT and market average based on weight
-        // Higher weight = more influence from direct comp
-        // Lower weight = more influence from market average
-        const blendRatio = Math.min(directCompWeight / 2, 0.85); // Cap at 85% direct comp influence
-        
-        directCompBuildingPriceSQFT = (directCompProp.buildingPriceSQFT * blendRatio) + (avgBuildingPriceSQFT * (1 - blendRatio));
-        directCompTotalPriceSQFT = (directCompProp.totalPriceSQFT * blendRatio) + (avgTotalPriceSQFT * (1 - blendRatio));
-        
-        // Calculate estimates using the blended $/SQFT values
+        // Calculate estimates using target property dimensions
         directCompEstimate = directCompBuildingPriceSQFT * targetBuildingSQFTWithFloors;
-        const targetTotalSQFT = targetProperty.propertySQFT + targetProperty.buildingSQFT;
-        directCompTotalEstimate = directCompTotalPriceSQFT * targetTotalSQFT;
+        directCompTargetTotalSQFT = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
+        directCompTotalEstimate = directCompTotalPriceSQFT * directCompTargetTotalSQFT;
     }
     
     // Reference values
@@ -1375,7 +1287,7 @@ function calculateAndRenderEstimates() {
         <div class="estimate-box minimized">
             <h4>Direct Comp Total-Based</h4>
             <div class="estimate-value">${formatCurrency(directCompTotalEstimate)}</div>
-            <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompTotalPriceSQFT) + ' × (' + formatNumber(targetProperty.propertySQFT, 2) + ' + ' + formatNumber(targetProperty.buildingSQFT, 2) + ')' : 'No comp selected'}</div>
+            <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompTotalPriceSQFT) + ' × ' + formatNumber(directCompTargetTotalSQFT, 2) + ' SQFT' : 'No comp selected'}</div>
         </div>
     `;
     
@@ -1865,8 +1777,8 @@ function updateMapHeatmap() {
     if (included.length === 0) return; // No data to display
     
     const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
-    const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
-    const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
+    const targetSize = targetProperty.buildingSQFT;
+    const targetTotalSize = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
     
     // Calculate all weight arrays based on current weighting method
     let weights = [];
@@ -1889,7 +1801,7 @@ function updateMapHeatmap() {
     } else if (weightingMethod === 'total-size') {
         // Total property size weighted
         const totalSizeWeights = included.map(p => {
-            const compTotalSize = p.propertySQFT + p.buildingSQFT;
+            const compTotalSize = calculateTotalPropertySQFT(p.propertySQFT, p.buildingSQFT, p.buildingWidthFeet, p.buildingDepthFeet);
             const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
             return 1 / (1 + totalSizeDiff / targetTotalSize);
         });
@@ -2230,8 +2142,8 @@ function updateMapCombined() {
     
     // Calculate weights for influence component
     const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
-    const targetSize = targetProperty.floors * (targetProperty.buildingWidthFeet * targetProperty.buildingDepthFeet);
-    const targetTotalSize = targetProperty.propertySQFT + targetProperty.buildingSQFT;
+    const targetSize = targetProperty.buildingSQFT;
+    const targetTotalSize = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
     
     let weights = [];
     
@@ -2249,7 +2161,7 @@ function updateMapCombined() {
         weights = sizeWeights.map(w => (w / totalSizeWeight) * 100);
     } else if (weightingMethod === 'total-size') {
         const totalSizeWeights = included.map(p => {
-            const compTotalSize = p.propertySQFT + p.buildingSQFT;
+            const compTotalSize = calculateTotalPropertySQFT(p.propertySQFT, p.buildingSQFT, p.buildingWidthFeet, p.buildingDepthFeet);
             const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
             return 1 / (1 + totalSizeDiff / targetTotalSize);
         });
