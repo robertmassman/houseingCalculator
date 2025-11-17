@@ -19,6 +19,42 @@ const CROWN_HEIGHTS_APPRECIATION = {
     2025: 0.042   // +4.2% (projected)
 };
 
+// Weighting and calculation constants
+const WEIGHTING_CONSTANTS = {
+    // Date weighting half-life: 525 days (~1.44 years)
+    // Properties lose half their weight after this period
+    // Exponential decay formula: weight = exp(-days / HALFLIFE)
+    DATE_WEIGHT_HALFLIFE_DAYS: 525,
+    
+    // High influence threshold: 50% above average weight
+    // Properties exceeding this threshold are marked as "high influence"
+    HIGH_INFLUENCE_MULTIPLIER: 1.5,
+    
+    // Renovated property weight multiplier (for 'renovated' weighting method)
+    // Renovated properties are 3x more relevant than non-renovated
+    RENOVATED_WEIGHT_MULTIPLIER: 3.0,
+    
+    // Combined weighting match multipliers (for 'combined' weighting method)
+    // When target and comp both renovated: 3x multiplier
+    RENOVATED_MATCH_MULTIPLIER: 3.0,
+    // When target and comp both have original details: 2x multiplier
+    ORIGINAL_DETAILS_MATCH_MULTIPLIER: 2.0,
+    
+    // All-weighted blend multipliers (for 'all-weighted' method)
+    // Applied when properties match target characteristics
+    ALL_WEIGHTED_RENOVATED_MULTIPLIER: 1.5,
+    ALL_WEIGHTED_ORIGINAL_DETAILS_MULTIPLIER: 1.3,
+    
+    // Legacy blended estimate weights (70/30 split)
+    // Note: Now using data-calibrated weights in production
+    BLENDED_BUILDING_WEIGHT: 0.7,  // 70% building-based estimate
+    BLENDED_LAND_WEIGHT: 0.3,       // 30% total property-based estimate
+    
+    // Invalid date penalty weight
+    // Properties with missing/invalid sale dates get 10% of normal weight
+    INVALID_DATE_PENALTY_WEIGHT: 0.1
+};
+
 // Map-related globals
 let map = null;
 let markersLayer = null;
@@ -150,23 +186,23 @@ function calculatePropertyWeights(properties, targetProperty, method) {
             // Properties weighted by sale date recency
             rawWeights = properties.map(p => {
                 const saleDate = parseACRISDate(p.sellDate);
-                if (!saleDate) return 0.1; // Penalize invalid dates
+                if (!saleDate) return WEIGHTING_CONSTANTS.INVALID_DATE_PENALTY_WEIGHT;
                 const daysSinceSale = daysBetween(saleDate);
-                return Math.exp(-daysSinceSale / 525); // 525-day half-life
+                return Math.exp(-daysSinceSale / WEIGHTING_CONSTANTS.DATE_WEIGHT_HALFLIFE_DAYS);
             });
             break;
             
         case 'renovated':
             // Renovated properties weighted higher
-            rawWeights = properties.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
+            rawWeights = properties.map(p => p.renovated === 'Yes' ? WEIGHTING_CONSTANTS.RENOVATED_WEIGHT_MULTIPLIER : 1.0);
             break;
             
         case 'combined':
             // Combined weighting based on renovated and original details matching
             rawWeights = properties.map(p => {
                 let weight = 1.0;
-                if (targetProperty.renovated === p.renovated) weight *= 3.0;
-                if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
+                if (targetProperty.renovated === p.renovated) weight *= WEIGHTING_CONSTANTS.RENOVATED_MATCH_MULTIPLIER;
+                if (targetProperty.originalDetails === p.originalDetails) weight *= WEIGHTING_CONSTANTS.ORIGINAL_DETAILS_MATCH_MULTIPLIER;
                 return weight;
             });
             break;
@@ -194,13 +230,13 @@ function calculatePropertyWeights(properties, targetProperty, method) {
                 const saleDate = parseACRISDate(p.sellDate);
                 if (saleDate) {
                     const daysSinceSale = daysBetween(saleDate);
-                    const dateWeight = Math.exp(-daysSinceSale / 525);
+                    const dateWeight = Math.exp(-daysSinceSale / WEIGHTING_CONSTANTS.DATE_WEIGHT_HALFLIFE_DAYS);
                     weight *= dateWeight * properties.length;
                 }
                 
                 // Qualitative match multipliers
-                if (p.renovated === targetProperty.renovated) weight *= 1.5;
-                if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
+                if (p.renovated === targetProperty.renovated) weight *= WEIGHTING_CONSTANTS.ALL_WEIGHTED_RENOVATED_MULTIPLIER;
+                if (p.originalDetails === targetProperty.originalDetails) weight *= WEIGHTING_CONSTANTS.ALL_WEIGHTED_ORIGINAL_DETAILS_MULTIPLIER;
                 
                 return weight;
             });
@@ -658,7 +694,7 @@ function renderComparables() {
                 weightPercent = weights[propIndex];
             }
         }
-        const isHighInfluence = weightPercent > (100 / included.length) * 1.5; // 50% above average
+        const isHighInfluence = weightPercent > (100 / included.length) * WEIGHTING_CONSTANTS.HIGH_INFLUENCE_MULTIPLIER;
 
         // Check if this is the direct comp
         if (prop.isDirectComp) {
@@ -1231,12 +1267,12 @@ function calculateAndRenderEstimates() {
     const estimateBHigh95 = targetTotalSQFT * (avgTotalPriceSQFT + (2 * stdDevTotalPriceSQFT));
 
     // Blended Estimate: 70% Method A + 30% Method B
-    const blendedEstimate = (estimateA * 0.7) + (estimateB * 0.3);
-    const blendedMedian = (estimateAMedian * 0.7) + (estimateBMedian * 0.3);
-    const blendedLow68 = (estimateALow68 * 0.7) + (estimateBLow68 * 0.3);
-    const blendedHigh68 = (estimateAHigh68 * 0.7) + (estimateBHigh68 * 0.3);
-    const blendedLow95 = (estimateALow95 * 0.7) + (estimateBLow95 * 0.3);
-    const blendedHigh95 = (estimateAHigh95 * 0.7) + (estimateBHigh95 * 0.3);
+    const blendedEstimate = (estimateA * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (estimateB * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+    const blendedMedian = (estimateAMedian * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (estimateBMedian * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+    const blendedLow68 = (estimateALow68 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (estimateBLow68 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+    const blendedHigh68 = (estimateAHigh68 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (estimateBHigh68 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+    const blendedLow95 = (estimateALow95 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (estimateBLow95 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+    const blendedHigh95 = (estimateAHigh95 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (estimateBHigh95 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
 
     // Calculate High Influence Properties Estimate (only if weighted method and high influence props exist)
     let highInfluenceEstimateHTML = '';
@@ -1263,19 +1299,19 @@ function calculateAndRenderEstimates() {
 
         const dateWeights = included.map(p => {
             const saleDate = parseACRISDate(p.sellDate);
-            if (!saleDate) return 0.1;
+            if (!saleDate) return WEIGHTING_CONSTANTS.INVALID_DATE_PENALTY_WEIGHT;
             const daysSinceSale = daysBetween(saleDate);
-            return Math.exp(-daysSinceSale / 525);
+            return Math.exp(-daysSinceSale / WEIGHTING_CONSTANTS.DATE_WEIGHT_HALFLIFE_DAYS);
         });
         const totalDateWeight = dateWeights.reduce((sum, w) => sum + w, 0);
 
-        const renovatedWeights = included.map(p => p.renovated === 'Yes' ? 3.0 : 1.0);
+        const renovatedWeights = included.map(p => p.renovated === 'Yes' ? WEIGHTING_CONSTANTS.RENOVATED_WEIGHT_MULTIPLIER : 1.0);
         const totalRenovatedWeight = renovatedWeights.reduce((sum, w) => sum + w, 0);
 
         const combinedWeights = included.map(p => {
             let weight = 1.0;
-            if (targetProperty.renovated === p.renovated) weight *= 3.0;
-            if (targetProperty.originalDetails === p.originalDetails) weight *= 2.0;
+            if (targetProperty.renovated === p.renovated) weight *= WEIGHTING_CONSTANTS.RENOVATED_MATCH_MULTIPLIER;
+            if (targetProperty.originalDetails === p.originalDetails) weight *= WEIGHTING_CONSTANTS.ORIGINAL_DETAILS_MATCH_MULTIPLIER;
             return weight;
         });
         const totalCombinedWeight = combinedWeights.reduce((sum, w) => sum + w, 0);
@@ -1285,15 +1321,15 @@ function calculateAndRenderEstimates() {
             if (totalPrice > 0) weight *= (p.adjustedSalePrice / totalPrice) * included.length;
             if (totalSizeWeight > 0 && sizeWeights[index]) weight *= (sizeWeights[index] / totalSizeWeight) * included.length;
             if (totalDateWeight > 0 && dateWeights[index]) weight *= (dateWeights[index] / totalDateWeight) * included.length;
-            if (p.renovated === targetProperty.renovated) weight *= 1.5;
-            if (p.originalDetails === targetProperty.originalDetails) weight *= 1.3;
+            if (p.renovated === targetProperty.renovated) weight *= WEIGHTING_CONSTANTS.ALL_WEIGHTED_RENOVATED_MULTIPLIER;
+            if (p.originalDetails === targetProperty.originalDetails) weight *= WEIGHTING_CONSTANTS.ALL_WEIGHTED_ORIGINAL_DETAILS_MULTIPLIER;
             return weight;
         });
         const totalAllWeight = allWeights.reduce((sum, w) => sum + w, 0);
 
         // Identify high influence properties (weight > 150% of average)
         const avgWeight = 100 / included.length;
-        const highInfluenceThreshold = avgWeight * 1.5;
+        const highInfluenceThreshold = avgWeight * WEIGHTING_CONSTANTS.HIGH_INFLUENCE_MULTIPLIER;
 
         // Calculate which properties are high influence based on current weighting method
         const highInfluenceProps = included.filter((p, index) => {
@@ -1345,12 +1381,12 @@ function calculateAndRenderEstimates() {
             const hiEstimateBLow95 = targetTotalSQFT * (hiAvgTotalPriceSQFT - (2 * hiStdDevTotalPriceSQFT));
             const hiEstimateBHigh95 = targetTotalSQFT * (hiAvgTotalPriceSQFT + (2 * hiStdDevTotalPriceSQFT));
 
-            const hiBlendedEstimate = (hiEstimateA * 0.7) + (hiEstimateB * 0.3);
-            const hiBlendedMedian = (hiEstimateAMedian * 0.7) + (hiEstimateBMedian * 0.3);
-            const hiBlendedLow68 = (hiEstimateALow68 * 0.7) + (hiEstimateBLow68 * 0.3);
-            const hiBlendedHigh68 = (hiEstimateAHigh68 * 0.7) + (hiEstimateBHigh68 * 0.3);
-            const hiBlendedLow95 = (hiEstimateALow95 * 0.7) + (hiEstimateBLow95 * 0.3);
-            const hiBlendedHigh95 = (hiEstimateAHigh95 * 0.7) + (hiEstimateBHigh95 * 0.3);
+            const hiBlendedEstimate = (hiEstimateA * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (hiEstimateB * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+            const hiBlendedMedian = (hiEstimateAMedian * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (hiEstimateBMedian * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+            const hiBlendedLow68 = (hiEstimateALow68 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (hiEstimateBLow68 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+            const hiBlendedHigh68 = (hiEstimateAHigh68 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (hiEstimateBHigh68 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+            const hiBlendedLow95 = (hiEstimateALow95 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (hiEstimateBLow95 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
+            const hiBlendedHigh95 = (hiEstimateAHigh95 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (hiEstimateBHigh95 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
 
             highInfluenceEstimateHTML = `
                 <div class="estimate-box high-influence-estimate">
