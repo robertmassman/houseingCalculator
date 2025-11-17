@@ -405,6 +405,55 @@ tr.outlier {
     background: #fff3cd !important;
     border-left: 3px solid #e74c3c !important;
 }
+
+/* Validation Panel Styles */
+.validation-panel {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 25px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.validation-errors {
+    background: #fee;
+    border-left: 4px solid #e74c3c;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+}
+
+.validation-warnings {
+    background: #fff3cd;
+    border-left: 4px solid #f39c12;
+    padding: 15px;
+    border-radius: 4px;
+}
+
+.validation-property-section {
+    margin-bottom: 12px;
+}
+
+.validation-property-section:last-child {
+    margin-bottom: 0;
+}
+
+.validation-panel ul {
+    list-style-type: none;
+    padding-left: 0;
+}
+
+.validation-panel li {
+    padding: 3px 0;
+    font-size: 13px;
+}
+
+.validation-panel li:before {
+    content: "• ";
+    font-weight: bold;
+    margin-right: 5px;
+}
+
     border-left: 3px solid #9b59b6;
 }
 

@@ -4,7 +4,7 @@ import { targetProperty as importedTarget } from './targetPropertyData.js';
 // Global data storage
 let targetProperty = null;
 let comparableProperties = [];
-let weightingMethod = 'all-weighted'; // 'simple', 'price', 'size', 'total-size', 'date', 'renovated', 'combined', 'all-weighted'
+let weightingMethod = 'all-weighted'; // 'simple', 'price', 'size', 'date', 'renovated', 'combined', 'all-weighted'
 let annualAppreciationRate = 0.05; // 5% annual appreciation (adjustable - fallback only)
 
 // Crown Heights historical appreciation data (2019-2025)
@@ -141,7 +141,7 @@ function daysBetween(fromDate, toDate = new Date()) {
  * Centralizes all weight calculation logic to eliminate duplication
  * @param {Array} properties - Array of comparable properties (must be included and have valid data)
  * @param {Object} targetProperty - Target property object for comparison
- * @param {string} method - Weighting method: 'simple', 'price', 'size', 'total-size', 'date', 'renovated', 'combined', 'all-weighted'
+ * @param {string} method - Weighting method: 'simple', 'price', 'size', 'date', 'renovated', 'combined', 'all-weighted'
  * @returns {Array} - Array of weight percentages (sum = 100) for each property
  */
 function calculatePropertyWeights(properties, targetProperty, method) {
@@ -168,26 +168,6 @@ function calculatePropertyWeights(properties, targetProperty, method) {
                 const compSize = p.buildingSQFT;
                 const sizeDiff = Math.abs(compSize - targetSize);
                 return 1 / (1 + sizeDiff / targetSize);
-            });
-            break;
-            
-        case 'total-size':
-            // Properties weighted by total property size similarity
-            const targetTotalSize = calculateTotalPropertySQFT(
-                targetProperty.propertySQFT, 
-                targetProperty.buildingSQFT, 
-                targetProperty.buildingWidthFeet, 
-                targetProperty.buildingDepthFeet
-            );
-            rawWeights = properties.map(p => {
-                const compTotalSize = calculateTotalPropertySQFT(
-                    p.propertySQFT, 
-                    p.buildingSQFT, 
-                    p.buildingWidthFeet, 
-                    p.buildingDepthFeet
-                );
-                const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
-                return 1 / (1 + totalSizeDiff / targetTotalSize);
             });
             break;
             
@@ -358,12 +338,227 @@ function calculateMedian(values) {
     return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-// Calculate standard deviation
+// Calculate standard deviation (sample)
 function calculateStdDev(values, mean) {
     if (!values || values.length === 0) return 0;
+    if (values.length === 1) return 0; // Single value has no deviation
     const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
-    const variance = squaredDiffs.reduce((sum, v) => sum + v, 0) / values.length;
+    // Use sample variance (N-1) for unbiased estimate of population variance
+    const variance = squaredDiffs.reduce((sum, v) => sum + v, 0) / (values.length - 1);
     return Math.sqrt(variance);
+}
+
+/**
+ * Validate property data for realistic values
+ * Checks dimensions, prices, and other property characteristics against Crown Heights norms
+ * @param {Object} property - Property object to validate
+ * @param {string} propertyType - 'target' or 'comparable'
+ * @returns {Object} - { isValid: boolean, errors: Array, warnings: Array }
+ */
+function validatePropertyData(property, propertyType = 'property') {
+    const errors = [];
+    const warnings = [];
+    
+    // Building width validation (Crown Heights rowhouses: typically 16-25ft)
+    if (property.buildingWidthFeet !== undefined && property.buildingWidthFeet !== null) {
+        if (property.buildingWidthFeet < 10) {
+            errors.push(`Building width ${property.buildingWidthFeet}ft is too narrow (minimum 10ft)`);
+        } else if (property.buildingWidthFeet < 14) {
+            warnings.push(`Building width ${property.buildingWidthFeet}ft is unusually narrow for Crown Heights`);
+        } else if (property.buildingWidthFeet > 30) {
+            warnings.push(`Building width ${property.buildingWidthFeet}ft is unusually wide for Crown Heights`);
+        } else if (property.buildingWidthFeet > 50) {
+            errors.push(`Building width ${property.buildingWidthFeet}ft is unrealistic`);
+        }
+    }
+    
+    // Building depth validation (Crown Heights: typically 40-60ft)
+    if (property.buildingDepthFeet !== undefined && property.buildingDepthFeet !== null) {
+        if (property.buildingDepthFeet < 20) {
+            errors.push(`Building depth ${property.buildingDepthFeet}ft is too shallow (minimum 20ft)`);
+        } else if (property.buildingDepthFeet < 30) {
+            warnings.push(`Building depth ${property.buildingDepthFeet}ft is unusually shallow for Crown Heights`);
+        } else if (property.buildingDepthFeet > 70) {
+            warnings.push(`Building depth ${property.buildingDepthFeet}ft is unusually deep for Crown Heights`);
+        } else if (property.buildingDepthFeet > 100) {
+            errors.push(`Building depth ${property.buildingDepthFeet}ft is unrealistic`);
+        }
+    }
+    
+    // Floors validation (Crown Heights: typically 2-4 floors)
+    if (property.floors !== undefined && property.floors !== null) {
+        if (property.floors < 1) {
+            errors.push(`Floors (${property.floors}) must be at least 1`);
+        } else if (property.floors > 5) {
+            warnings.push(`${property.floors} floors is unusual for Crown Heights rowhouses`);
+        } else if (property.floors > 7) {
+            errors.push(`${property.floors} floors is unrealistic for rowhouse properties`);
+        }
+    }
+    
+    // Building SQFT validation (Crown Heights: typically 2,000-5,000 SQFT)
+    if (property.buildingSQFT !== undefined && property.buildingSQFT !== null) {
+        if (property.buildingSQFT < 500) {
+            errors.push(`Building SQFT (${property.buildingSQFT}) is too small (minimum 500)`);
+        } else if (property.buildingSQFT < 1500) {
+            warnings.push(`Building SQFT (${property.buildingSQFT}) is unusually small for Crown Heights`);
+        } else if (property.buildingSQFT > 6000) {
+            warnings.push(`Building SQFT (${property.buildingSQFT}) is unusually large for Crown Heights`);
+        } else if (property.buildingSQFT > 10000) {
+            errors.push(`Building SQFT (${property.buildingSQFT}) is unrealistic for rowhouse properties`);
+        }
+    }
+    
+    // Lot size validation (Crown Heights: typically 1,500-2,500 SQFT)
+    if (property.propertySQFT !== undefined && property.propertySQFT !== null) {
+        if (property.propertySQFT < 500) {
+            errors.push(`Lot size (${property.propertySQFT} SQFT) is too small (minimum 500)`);
+        } else if (property.propertySQFT < 1000) {
+            warnings.push(`Lot size (${property.propertySQFT} SQFT) is unusually small for Crown Heights`);
+        } else if (property.propertySQFT > 4000) {
+            warnings.push(`Lot size (${property.propertySQFT} SQFT) is unusually large for Crown Heights`);
+        } else if (property.propertySQFT > 10000) {
+            errors.push(`Lot size (${property.propertySQFT} SQFT) is unrealistic`);
+        }
+    }
+    
+    // Price per SQFT validation (Crown Heights: typically $400-$900/SQFT as of 2025)
+    if (property.buildingPriceSQFT !== undefined && property.buildingPriceSQFT > 0) {
+        if (property.buildingPriceSQFT < 200) {
+            warnings.push(`Price/SQFT ($${property.buildingPriceSQFT.toFixed(2)}) is unusually low for Crown Heights`);
+        } else if (property.buildingPriceSQFT < 100) {
+            errors.push(`Price/SQFT ($${property.buildingPriceSQFT.toFixed(2)}) is unrealistically low`);
+        } else if (property.buildingPriceSQFT > 1200) {
+            warnings.push(`Price/SQFT ($${property.buildingPriceSQFT.toFixed(2)}) is unusually high for Crown Heights`);
+        } else if (property.buildingPriceSQFT > 2000) {
+            errors.push(`Price/SQFT ($${property.buildingPriceSQFT.toFixed(2)}) is unrealistically high`);
+        }
+    }
+    
+    // Sale price validation (for comparables)
+    if (propertyType === 'comparable' && property.adjustedSalePrice !== undefined && property.adjustedSalePrice > 0) {
+        if (property.adjustedSalePrice < 500000) {
+            warnings.push(`Sale price (${formatCurrency(property.adjustedSalePrice)}) is unusually low for Crown Heights`);
+        } else if (property.adjustedSalePrice < 100000) {
+            errors.push(`Sale price (${formatCurrency(property.adjustedSalePrice)}) is unrealistically low`);
+        } else if (property.adjustedSalePrice > 5000000) {
+            warnings.push(`Sale price (${formatCurrency(property.adjustedSalePrice)}) is unusually high for Crown Heights`);
+        } else if (property.adjustedSalePrice > 10000000) {
+            errors.push(`Sale price (${formatCurrency(property.adjustedSalePrice)}) is unrealistically high`);
+        }
+    }
+    
+    // Date validation (for comparables)
+    if (propertyType === 'comparable' && property.sellDate) {
+        const saleDate = parseACRISDate(property.sellDate);
+        if (!saleDate) {
+            warnings.push(`Sale date "${property.sellDate}" could not be parsed`);
+        } else {
+            const yearsAgo = daysBetween(saleDate) / 365.25;
+            if (yearsAgo > 10) {
+                warnings.push(`Sale date (${property.sellDate}) is over 10 years old - may not reflect current market`);
+            } else if (yearsAgo < 0) {
+                errors.push(`Sale date (${property.sellDate}) is in the future`);
+            }
+        }
+    }
+    
+    // Cross-validation: Building should fit on lot
+    if (property.buildingSQFT && property.propertySQFT && property.floors) {
+        const buildingFootprint = property.buildingSQFT / property.floors;
+        if (buildingFootprint > property.propertySQFT) {
+            errors.push(`Building footprint (${buildingFootprint.toFixed(0)} SQFT) exceeds lot size (${property.propertySQFT} SQFT)`);
+        } else if (buildingFootprint > property.propertySQFT * 0.9) {
+            warnings.push(`Building footprint (${buildingFootprint.toFixed(0)} SQFT) covers ${((buildingFootprint / property.propertySQFT) * 100).toFixed(0)}% of lot - very high coverage`);
+        }
+    }
+    
+    // Cross-validation: Calculated SQFT should match stated SQFT
+    if (property.buildingWidthFeet && property.buildingDepthFeet && property.floors && property.buildingSQFT) {
+        const calculatedSQFT = property.buildingWidthFeet * property.buildingDepthFeet * property.floors;
+        const difference = Math.abs(calculatedSQFT - property.buildingSQFT);
+        const percentDiff = (difference / property.buildingSQFT) * 100;
+        
+        if (percentDiff > 20) {
+            warnings.push(`Calculated building SQFT (${calculatedSQFT.toFixed(0)}) differs from stated SQFT (${property.buildingSQFT}) by ${percentDiff.toFixed(1)}%`);
+        }
+    }
+    
+    return {
+        isValid: errors.length === 0,
+        errors,
+        warnings,
+        address: property.address || 'Unknown property'
+    };
+}
+
+/**
+ * Display validation results to user
+ * @param {Array} validationResults - Array of validation result objects
+ */
+function displayValidationResults(validationResults) {
+    const errorsExist = validationResults.some(r => r.errors.length > 0);
+    const warningsExist = validationResults.some(r => r.warnings.length > 0);
+    
+    if (!errorsExist && !warningsExist) {
+        return; // No issues to display
+    }
+    
+    // Create validation panel
+    let html = '<div class="validation-panel">';
+    
+    // Display errors (critical issues)
+    const errorResults = validationResults.filter(r => r.errors.length > 0);
+    if (errorResults.length > 0) {
+        html += '<div class="validation-errors">';
+        html += '<h4 style="color: #e74c3c; margin: 0 0 10px 0;">❌ Data Validation Errors</h4>';
+        html += '<div style="font-size: 13px; color: #666; margin-bottom: 10px;">Critical issues that may affect calculation accuracy:</div>';
+        
+        errorResults.forEach(result => {
+            html += `<div class="validation-property-section">`;
+            html += `<strong style="color: #2c3e50;">${result.address}</strong>`;
+            html += '<ul style="margin: 5px 0; padding-left: 20px;">';
+            result.errors.forEach(error => {
+                html += `<li style="color: #e74c3c;">${error}</li>`;
+            });
+            html += '</ul></div>';
+        });
+        html += '</div>';
+    }
+    
+    // Display warnings (non-critical issues)
+    const warningResults = validationResults.filter(r => r.warnings.length > 0);
+    if (warningResults.length > 0) {
+        html += '<div class="validation-warnings">';
+        html += '<h4 style="color: #f39c12; margin: 10px 0 10px 0;">⚠️ Data Validation Warnings</h4>';
+        html += '<div style="font-size: 13px; color: #666; margin-bottom: 10px;">Unusual values that may warrant review:</div>';
+        
+        warningResults.forEach(result => {
+            html += `<div class="validation-property-section">`;
+            html += `<strong style="color: #2c3e50;">${result.address}</strong>`;
+            html += '<ul style="margin: 5px 0; padding-left: 20px;">';
+            result.warnings.forEach(warning => {
+                html += `<li style="color: #856404;">${warning}</li>`;
+            });
+            html += '</ul></div>';
+        });
+        html += '</div>';
+    }
+    
+    html += '</div>';
+    
+    // Insert validation panel at the top of the estimates section
+    const estimatesContainer = document.getElementById('estimates');
+    if (estimatesContainer) {
+        // Remove any existing validation panel
+        const existingPanel = estimatesContainer.querySelector('.validation-panel');
+        if (existingPanel) {
+            existingPanel.remove();
+        }
+        
+        // Insert new panel at the top
+        estimatesContainer.insertAdjacentHTML('afterbegin', html);
+    }
 }
 
 // Calculate Property SQFT
@@ -608,6 +803,31 @@ function loadData() {
             if (dropdown) dropdown.style.display = 'none';
         }
 
+        // Validate all property data
+        const validationResults = [];
+        
+        // Validate target property
+        if (targetProperty) {
+            const targetValidation = validatePropertyData(targetProperty, 'target');
+            if (targetValidation.errors.length > 0 || targetValidation.warnings.length > 0) {
+                validationResults.push(targetValidation);
+            }
+        }
+        
+        // Validate comparable properties
+        comparableProperties.forEach(prop => {
+            const compValidation = validatePropertyData(prop, 'comparable');
+            if (compValidation.errors.length > 0 || compValidation.warnings.length > 0) {
+                validationResults.push(compValidation);
+            }
+        });
+        
+        // Display validation results if any issues found
+        if (validationResults.length > 0) {
+            console.log('Property validation results:', validationResults);
+            // Validation panel will be displayed after rendering estimates
+        }
+
         // Initialize button states to match default weightingMethod
         document.querySelectorAll('.weight-btn').forEach(btn => {
             if (btn.dataset.method === weightingMethod) {
@@ -621,6 +841,11 @@ function loadData() {
         renderTargetProperty();
         renderComparables();
         calculateAndRenderEstimates();
+
+        // Display validation results after rendering
+        if (validationResults.length > 0) {
+            displayValidationResults(validationResults);
+        }
 
         // Initialize column sorting
         initializeColumnSorting();
@@ -1043,7 +1268,6 @@ const avgTypeMap = {
     'simple': 'Simple Average',
     'price': 'Price-Weighted Average',
     'size': 'Building Size-Weighted Average',
-    'total-size': 'Total Property Size-Weighted Average',
     'date': 'Date-Weighted Average (Recent Sales)',
     'renovated': 'Renovated-Weighted Average',
     'combined': 'Combined (Renovated + Original Details) Weighted Average',
@@ -1350,11 +1574,31 @@ function analyzeOutliers(properties) {
 }
 
 // Calculate and render estimates
+// Calculate and render estimates
 function calculateAndRenderEstimates() {
     const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
 
     // Analyze for outliers before calculating estimates
     const outlierAnalysis = analyzeOutliers(included);
+    
+    // Re-validate included properties and target
+    const validationResults = [];
+    
+    // Validate target property
+    if (targetProperty) {
+        const targetValidation = validatePropertyData(targetProperty, 'target');
+        if (targetValidation.errors.length > 0 || targetValidation.warnings.length > 0) {
+            validationResults.push(targetValidation);
+        }
+    }
+    
+    // Validate only included comparable properties
+    included.forEach(prop => {
+        const compValidation = validatePropertyData(prop, 'comparable');
+        if (compValidation.errors.length > 0 || compValidation.warnings.length > 0) {
+            validationResults.push(compValidation);
+        }
+    });
 
     let avgBuildingPriceSQFT = 0;
     let avgTotalPriceSQFT = 0;
@@ -1733,6 +1977,11 @@ function calculateAndRenderEstimates() {
     `;
 
     calculateAndRenderAverages();
+    
+    // Display validation results after rendering estimates
+    if (validationResults.length > 0) {
+        displayValidationResults(validationResults);
+    }
 }
 
 // Change target property based on dropdown selection

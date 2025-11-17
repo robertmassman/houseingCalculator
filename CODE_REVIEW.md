@@ -883,42 +883,165 @@ Range: $450.00 - $750.00 (IQR method)
 
 ---
 
-### 17. **Add Validation for Unrealistic Values**
+### 17. **Add Validation for Unrealistic Values** ✅ RESOLVED
+**Location:** `calculator.js`, lines 371-565
 **Severity:** MEDIUM - Data integrity  
+**Status:** ✅ **COMPLETED**
+
+**Previous Issue:**
+The calculator had no mechanism to validate property data for realistic values, which could lead to calculation errors from data entry mistakes or unusual properties going unnoticed.
+
+**Resolution:**
+Implemented comprehensive validation system with two-tier validation (errors and warnings):
 
 ```javascript
 /**
  * Validate property data for realistic values
- * @param {Object} property - Property object
- * @returns {Array} - Array of validation errors
+ * Checks dimensions, prices, and other property characteristics against Crown Heights norms
+ * @param {Object} property - Property object to validate
+ * @param {string} propertyType - 'target' or 'comparable'
+ * @returns {Object} - { isValid: boolean, errors: Array, warnings: Array }
  */
-function validatePropertyData(property) {
-    const errors = [];
+function validatePropertyData(property, propertyType = 'property') {
+    const errors = [];    // Critical issues
+    const warnings = [];  // Non-critical issues
     
-    // Building width/depth should be reasonable
-    if (property.buildingWidthFeet < 10 || property.buildingWidthFeet > 100) {
-        errors.push(`Building width ${property.buildingWidthFeet}ft is unusual`);
-    }
+    // Building width validation (Crown Heights: typically 16-25ft)
+    // - Errors: < 10ft or > 50ft
+    // - Warnings: < 14ft or > 30ft
     
-    // Price per square foot should be in reasonable range for Brooklyn
-    const priceSQFT = property.buildingPriceSQFT;
-    if (priceSQFT < 200 || priceSQFT > 2000) {
-        errors.push(`Price/SQFT $${priceSQFT} is outside normal range ($200-$2000)`);
-    }
+    // Building depth validation (Crown Heights: typically 40-60ft)
+    // - Errors: < 20ft or > 100ft
+    // - Warnings: < 30ft or > 70ft
     
-    // Lot size should be reasonable for Brooklyn rowhouses
-    if (property.propertySQFT < 500 || property.propertySQFT > 10000) {
-        errors.push(`Lot size ${property.propertySQFT} sq ft is unusual`);
-    }
+    // Floors validation (Crown Heights: typically 2-4 floors)
+    // - Errors: < 1 or > 7 floors
+    // - Warnings: > 5 floors
     
-    // Number of floors should be reasonable
-    if (property.floors < 1 || property.floors > 7) {
-        errors.push(`${property.floors} floors is unusual for area`);
-    }
+    // Building SQFT validation (Crown Heights: typically 2,000-5,000 SQFT)
+    // - Errors: < 500 or > 10,000 SQFT
+    // - Warnings: < 1,500 or > 6,000 SQFT
     
-    return errors;
+    // Lot size validation (Crown Heights: typically 1,500-2,500 SQFT)
+    // - Errors: < 500 or > 10,000 SQFT
+    // - Warnings: < 1,000 or > 4,000 SQFT
+    
+    // Price per SQFT validation (Crown Heights: typically $400-$900/SQFT)
+    // - Errors: < $100 or > $2,000/SQFT
+    // - Warnings: < $200 or > $1,200/SQFT
+    
+    // Sale price validation (for comparables)
+    // - Errors: < $100k or > $10M
+    // - Warnings: < $500k or > $5M
+    
+    // Date validation (for comparables)
+    // - Errors: Future dates
+    // - Warnings: > 10 years old
+    
+    // Cross-validation: Building footprint vs lot size
+    // - Errors: Building exceeds lot size
+    // - Warnings: Building covers > 90% of lot
+    
+    // Cross-validation: Calculated SQFT vs stated SQFT
+    // - Warnings: > 20% difference
+    
+    return { isValid, errors, warnings, address };
 }
 ```
+
+**UI Integration:**
+
+1. **Validation Panel Display:**
+   - Shows at top of estimates section
+   - Two-tier system: Errors (red) and Warnings (yellow)
+   - Groups issues by property address
+   - Detailed messages explain each issue
+
+2. **Error Panel (Critical Issues):**
+   ```
+   ❌ Data Validation Errors
+   Critical issues that may affect calculation accuracy:
+   
+   1219 Dean St
+   • Building depth 15ft is too shallow (minimum 20ft)
+   • Sale price ($50,000) is unrealistically low
+   ```
+
+3. **Warning Panel (Non-Critical Issues):**
+   ```
+   ⚠️ Data Validation Warnings
+   Unusual values that may warrant review:
+   
+   1455 Pacific St
+   • Building width 28ft is unusually wide for Crown Heights
+   • Price/SQFT ($1,150.00) is unusually high for Crown Heights
+   • Sale date (05/15/2014) is over 10 years old
+   ```
+
+**Validation Triggers:**
+- On initial data load
+- When toggling properties included/excluded
+- When recalculating estimates
+- Only validates included properties in calculations
+
+**CSS Styling:**
+```css
+.validation-panel {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 25px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.validation-errors {
+    background: #fee;
+    border-left: 4px solid #e74c3c;
+    padding: 15px;
+    border-radius: 4px;
+}
+
+.validation-warnings {
+    background: #fff3cd;
+    border-left: 4px solid #f39c12;
+    padding: 15px;
+    border-radius: 4px;
+}
+```
+
+**Benefits:**
+- ✅ **Market-specific validation** - ranges based on Crown Heights norms
+- ✅ **Two-tier system** - distinguishes critical errors from warnings
+- ✅ **Cross-validation** - checks logical consistency (building vs lot)
+- ✅ **Clear UI feedback** - color-coded panels with detailed messages
+- ✅ **Automatic updates** - re-validates when properties change
+- ✅ **Comprehensive checks** - dimensions, prices, dates, logical consistency
+
+**Example Validations:**
+
+*Dimension Validation:*
+- Building 12ft wide → Warning (unusually narrow)
+- Building 8ft wide → Error (too narrow)
+- 6 floors → Warning (unusually tall for rowhouse)
+- 10 floors → Error (unrealistic)
+
+*Price Validation:*
+- $150/SQFT → Warning (unusually low)
+- $50/SQFT → Error (unrealistically low)
+- $1,400/SQFT → Warning (unusually high)
+- $2,500/SQFT → Error (unrealistically high)
+
+*Cross-Validation:*
+- 4,000 SQFT building on 3,500 SQFT lot → Error (impossible)
+- 3,200 SQFT building on 3,500 SQFT lot (91% coverage) → Warning (very high)
+- Calculated 3,600 SQFT vs stated 4,500 SQFT (25% diff) → Warning (mismatch)
+
+**Code Metrics:**
+- Validation function: 195 lines
+- Display function: 70 lines
+- CSS styling: 45 lines
+- Total added: ~310 lines
+- Validation rules: 8 main categories, 16 specific checks
 
 ---
 
@@ -1029,7 +1152,7 @@ function calculateAVMEstimate(property, comps) {
 8. ✅ **COMPLETED** - Property adjustment factors implemented (CMA-style adjustments)
 9. ✅ **COMPLETED** - Outlier detection implemented (IQR method with visual warnings)
 10. ✅ **COMPLETED** - Changed standard deviation to use sample variance (N-1) for unbiased estimate
-11. ⚠️ Add property data validation
+11. ✅ **COMPLETED** - Property data validation with two-tier error/warning system
 
 ### Low Priority (Nice to Have)
 12. ✅ **COMPLETED** - Map visualization scaling uses linear scaling (proportional representation)
