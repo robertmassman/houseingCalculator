@@ -1598,7 +1598,7 @@ function calculateAndRenderEstimates() {
     const container = document.getElementById('estimates-container');
     container.innerHTML = `
         <div class="estimate-box primary">
-            <h4>🏆 NYC Appraisal Method</h4>
+            <h4>NYC Appraisal Method</h4>
             <div class="estimate-value">${formatCurrency(nycEstimateMedian)}</div>
             <div class="estimate-formula">Industry-Standard: Interior SQFT × Comp $/SQFT + Qualitative Adjustments</div>
             <div class="confidence-interval" style="margin-top: 15px; border-top: 1px solid #e0e0e0; padding-top: 10px;">
@@ -1680,6 +1680,12 @@ function calculateAndRenderEstimates() {
     let directCompEstimate = 0;
     let directCompTotalEstimate = 0;
     let directCompTargetTotalSQFT = 0;
+    
+    // CMA-adjusted direct comp values
+    let directCompAdjustment = null;
+    let directCompAdjustedSalePrice = 0;
+    let directCompAdjustedBuildingPriceSQFT = 0;
+    let directCompAdjustedEstimate = 0;
 
     if (directCompProp) {
         // Use the direct comp's actual $/SQFT values without any blending
@@ -1690,6 +1696,13 @@ function calculateAndRenderEstimates() {
         directCompEstimate = directCompBuildingPriceSQFT * targetBuildingSQFTWithFloors;
         directCompTargetTotalSQFT = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
         directCompTotalEstimate = directCompTotalPriceSQFT * directCompTargetTotalSQFT;
+        
+        // Calculate CMA-adjusted values
+        // Use appreciation-adjusted price, then apply CMA adjustment factor
+        directCompAdjustment = calculatePropertyAdjustments(directCompProp, targetProperty);
+        directCompAdjustedSalePrice = directCompProp.adjustedSalePrice * directCompAdjustment.adjustmentFactor;
+        directCompAdjustedBuildingPriceSQFT = directCompAdjustedSalePrice / directCompProp.buildingSQFT;
+        directCompAdjustedEstimate = directCompAdjustedBuildingPriceSQFT * targetBuildingSQFTWithFloors;
     }
 
     // Reference values
@@ -1705,6 +1718,12 @@ function calculateAndRenderEstimates() {
             <h4>Direct Comp Building-Based</h4>
             <div class="estimate-value">${formatCurrency(directCompEstimate)}</div>
             <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompBuildingPriceSQFT) + ' × (' + targetProperty.floors + ' floors × ' + formatNumber(targetProperty.buildingWidthFeet, 2) + ' × ' + formatNumber(targetProperty.buildingDepthFeet, 2) + ')' : 'No comp selected'}</div>
+        </div>
+        <div class="estimate-box minimized">
+            <h4>Direct Comp Adjusted</h4>
+            <div class="estimate-value">${formatCurrency(directCompAdjustedSalePrice)}</div>
+            <div class="average-count" style="margin-top: 5px;">${directCompProp ? 'CMA Adjustment: ' + (directCompAdjustment.totalAdjustmentPercent >= 0 ? '+' : '') + directCompAdjustment.totalAdjustmentPercent.toFixed(1) + '% (Comp is ' + (directCompAdjustment.totalAdjustmentPercent < 0 ? 'better' : 'worse') + ' than target)' : 'No comp selected'}</div>
+            <div class="average-count" style="margin-top: 3px; font-size: 0.85em; opacity: 0.9;">${directCompProp ? 'Adjusted $/SQFT: ' + formatCurrency(directCompAdjustedBuildingPriceSQFT) : ''}</div>
         </div>
         <!-- <div class="estimate-box minimized">
             <h4>Direct Comp Total-Based</h4>
