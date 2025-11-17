@@ -800,6 +800,11 @@ function renderComparables() {
         if (weightingMethod !== 'simple' && prop.included && isHighInfluence) {
             row.classList.add('high-influence');
         }
+        
+        // Add outlier class if flagged
+        if (prop.isOutlier) {
+            row.classList.add('outlier');
+        }
 
         // Calculate property adjustment for this comp
         const adjustment = calculatePropertyAdjustments(prop, targetProperty);
@@ -832,6 +837,7 @@ function renderComparables() {
                         ${prop.address}
                         ${prop.isDirectComp ? '<span class="badge badge-direct-comp">Direct Comp</span>' : ''}
                         ${weightingMethod !== 'simple' && prop.included && isHighInfluence ? '<span class="badge badge-high-influence">High Influence</span>' : ''}
+                        ${prop.isOutlier && prop.included ? '<span class="badge badge-outlier" title="Statistical outlier - unusual price/SQFT">⚠️ Outlier</span>' : ''}
                     </td>
                     <td>${prop.renovated}</td>
                     <td>${prop.originalDetails || 'N/A'}</td>
@@ -1048,6 +1054,9 @@ const avgTypeMap = {
 function calculateAndRenderAverages() {
     const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
 
+    // Analyze for outliers
+    const outlierAnalysis = analyzeOutliers(included);
+
     let avgBuildingPriceSQFT = 0;
     let avgTotalPriceSQFT = 0;
     let medianBuildingPriceSQFT = 0;
@@ -1099,7 +1108,28 @@ function calculateAndRenderAverages() {
 
     const container = document.getElementById('market-averages');
     const avgType = avgTypeMap[weightingMethod];
-    container.innerHTML = `
+    
+    // Build outlier warning if detected
+    let outlierWarning = '';
+    if (outlierAnalysis.hasOutliers) {
+        const outlierProps = included.filter(p => p.isOutlier);
+        const outlierAddresses = outlierProps.map(p => p.address).join(', ');
+        outlierWarning = `
+            <div class="outlier-warning" style="background: #fff3cd; border-left: 4px solid #e74c3c; padding: 12px 15px; margin-bottom: 15px; border-radius: 4px;">
+                <strong style="color: #e74c3c;">⚠️ Statistical Outliers Detected:</strong>
+                <div style="font-size: 13px; margin-top: 5px; color: #856404;">
+                    ${outlierAnalysis.outlierCount} of ${outlierAnalysis.total} included properties have unusual price/SQFT values outside normal range.
+                    <br><strong>Properties:</strong> ${outlierAddresses}
+                    <br><strong>Range:</strong> ${formatCurrency(outlierAnalysis.buildingPriceOutliers.lowerBound)} - ${formatCurrency(outlierAnalysis.buildingPriceOutliers.upperBound)} (IQR method)
+                </div>
+                <div style="font-size: 12px; margin-top: 8px; color: #666; font-style: italic;">
+                    💡 Consider excluding outliers or investigating their unusual characteristics.
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = outlierWarning + `
         <div class="average-box">
             <h4>Building $ SQFT</h4>
             <div class="average-value">${formatCurrency(avgBuildingPriceSQFT)}</div>
@@ -1229,9 +1259,102 @@ function calculateWidthPremium(targetWidth, compWidths) {
     };
 }
 
+/**
+ * Detect statistical outliers using IQR (Interquartile Range) method
+ * Industry-standard approach for identifying unusual comparable properties
+ * @param {Array} values - Array of numeric values (e.g., price per SQFT)
+ * @returns {Object} - { outliers: Boolean array, lowerBound, upperBound, q1, q3, iqr }
+ */
+function detectOutliers(values) {
+    if (!values || values.length < 4) {
+        // Need at least 4 values for meaningful IQR calculation
+        return {
+            outliers: values ? values.map(() => false) : [],
+            lowerBound: 0,
+            upperBound: Infinity,
+            q1: 0,
+            q3: 0,
+            iqr: 0
+        };
+    }
+    
+    const sorted = [...values].sort((a, b) => a - b);
+    const n = sorted.length;
+    
+    // Calculate quartiles using industry-standard method
+    const q1Index = Math.floor(n * 0.25);
+    const q3Index = Math.floor(n * 0.75);
+    const q1 = sorted[q1Index];
+    const q3 = sorted[q3Index];
+    const iqr = q3 - q1;
+    
+    // Standard outlier boundaries: Q1 - 1.5×IQR and Q3 + 1.5×IQR
+    // This captures ~99.3% of normally distributed data
+    const lowerBound = q1 - (1.5 * iqr);
+    const upperBound = q3 + (1.5 * iqr);
+    
+    // Flag outliers
+    const outliers = values.map(v => v < lowerBound || v > upperBound);
+    
+    return {
+        outliers,
+        lowerBound,
+        upperBound,
+        q1,
+        q3,
+        iqr
+    };
+}
+
+/**
+ * Analyze comparable properties for outliers in price per SQFT
+ * Flags properties with unusual pricing for review
+ * @param {Array} properties - Array of comparable properties
+ * @returns {Object} - Analysis with outlier flags and statistics
+ */
+function analyzeOutliers(properties) {
+    if (!properties || properties.length === 0) {
+        return {
+            hasOutliers: false,
+            outlierCount: 0,
+            total: 0,
+            buildingPriceOutliers: [],
+            totalPriceOutliers: []
+        };
+    }
+    
+    // Detect outliers in building price per SQFT
+    const buildingPrices = properties.map(p => p.buildingPriceSQFT);
+    const buildingAnalysis = detectOutliers(buildingPrices);
+    
+    // Detect outliers in total price per SQFT
+    const totalPrices = properties.map(p => p.totalPriceSQFT);
+    const totalAnalysis = detectOutliers(totalPrices);
+    
+    // Mark properties as outliers
+    properties.forEach((p, i) => {
+        p.isBuildingPriceOutlier = buildingAnalysis.outliers[i];
+        p.isTotalPriceOutlier = totalAnalysis.outliers[i];
+        p.isOutlier = buildingAnalysis.outliers[i] || totalAnalysis.outliers[i];
+    });
+    
+    const outlierCount = properties.filter(p => p.isOutlier).length;
+    
+    return {
+        hasOutliers: outlierCount > 0,
+        outlierCount,
+        total: properties.length,
+        buildingPriceOutliers: buildingAnalysis,
+        totalPriceOutliers: totalAnalysis
+    };
+}
+
 // Calculate and render estimates
 function calculateAndRenderEstimates() {
     const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
+
+    // Analyze for outliers before calculating estimates
+    const outlierAnalysis = analyzeOutliers(included);
 
     let avgBuildingPriceSQFT = 0;
     let avgTotalPriceSQFT = 0;

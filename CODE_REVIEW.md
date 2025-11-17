@@ -750,37 +750,123 @@ All constants defined in `WEIGHTING_CONSTANTS` for easy adjustment based on mark
 
 ---
 
-### 16. **Add Outlier Detection**
+### 16. **Add Outlier Detection** ✅ RESOLVED
 **Severity:** MEDIUM - Improve estimate reliability  
+**Status:** ✅ **COMPLETED**
 
-Implement statistical outlier detection:
+**Previous Issue:**
+The calculator had no mechanism to detect and flag comparable properties with unusual price per SQFT values. This could lead to skewed estimates when outliers were included in calculations.
+
+**Resolution:**
+Implemented industry-standard outlier detection using the IQR (Interquartile Range) method:
 
 ```javascript
 /**
- * Detect and flag statistical outliers using IQR method
- * @param {Array} values - Array of numeric values
- * @returns {Array} - Boolean array: true = outlier
+ * Detect statistical outliers using IQR (Interquartile Range) method
+ * Industry-standard approach for identifying unusual comparable properties
+ * @param {Array} values - Array of numeric values (e.g., price per SQFT)
+ * @returns {Object} - { outliers: Boolean array, lowerBound, upperBound, q1, q3, iqr }
  */
 function detectOutliers(values) {
     const sorted = [...values].sort((a, b) => a - b);
-    const q1 = sorted[Math.floor(sorted.length * 0.25)];
-    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const n = sorted.length;
+    
+    // Calculate quartiles
+    const q1 = sorted[Math.floor(n * 0.25)];
+    const q3 = sorted[Math.floor(n * 0.75)];
     const iqr = q3 - q1;
+    
+    // Standard outlier boundaries: Q1 - 1.5×IQR and Q3 + 1.5×IQR
     const lowerBound = q1 - (1.5 * iqr);
     const upperBound = q3 + (1.5 * iqr);
     
+    // Flag outliers
     return values.map(v => v < lowerBound || v > upperBound);
 }
-
-// Usage: Flag outliers in price per square foot
-const outliers = detectOutliers(included.map(p => p.buildingPriceSQFT));
-included.forEach((p, i) => {
-    if (outliers[i]) {
-        p.isOutlier = true;
-        // Optionally reduce weight or exclude
-    }
-});
 ```
+
+**Integration:**
+```javascript
+/**
+ * Analyze comparable properties for outliers in price per SQFT
+ * @param {Array} properties - Array of comparable properties
+ * @returns {Object} - Analysis with outlier flags and statistics
+ */
+function analyzeOutliers(properties) {
+    // Detect outliers in building price per SQFT
+    const buildingPrices = properties.map(p => p.buildingPriceSQFT);
+    const buildingAnalysis = detectOutliers(buildingPrices);
+    
+    // Detect outliers in total price per SQFT
+    const totalPrices = properties.map(p => p.totalPriceSQFT);
+    const totalAnalysis = detectOutliers(totalPrices);
+    
+    // Mark properties as outliers
+    properties.forEach((p, i) => {
+        p.isOutlier = buildingAnalysis.outliers[i] || totalAnalysis.outliers[i];
+    });
+    
+    return { hasOutliers, outlierCount, buildingPriceOutliers, totalPriceOutliers };
+}
+```
+
+**UI Enhancements:**
+
+1. **Outlier Badge in Table:**
+   - Properties flagged as outliers display a red "⚠️ Outlier" badge
+   - Hover tooltip explains "Statistical outlier - unusual price/SQFT"
+   - Row highlighted with yellow background (#fff3cd) and red left border
+
+2. **Outlier Warning Panel:**
+   - Displayed above market averages when outliers detected
+   - Shows count of outliers and total properties
+   - Lists outlier property addresses
+   - Displays acceptable price range (IQR boundaries)
+   - Suggests reviewing or excluding outliers
+
+3. **Visual Styling:**
+   ```css
+   .badge-outlier {
+       background: #e74c3c;
+       color: white;
+       cursor: help;
+   }
+   
+   tr.outlier {
+       background: #fff3cd !important;
+       border-left: 3px solid #e74c3c !important;
+   }
+   ```
+
+**Benefits:**
+- ✅ **Industry-standard method** - IQR is widely used in real estate appraisal
+- ✅ **Automatic detection** - no manual review required
+- ✅ **Clear visual feedback** - outliers easy to identify in table
+- ✅ **Actionable guidance** - warning suggests reviewing outliers
+- ✅ **Statistical rigor** - captures ~99.3% of normally distributed data
+- ✅ **Transparent criteria** - shows exact boundaries for outlier classification
+
+**Example Detection:**
+```
+⚠️ Statistical Outliers Detected:
+2 of 15 included properties have unusual price/SQFT values outside normal range.
+Properties: 1219 Dean St, 1455 Pacific St
+Range: $450.00 - $750.00 (IQR method)
+💡 Consider excluding outliers or investigating their unusual characteristics.
+```
+
+**Technical Details:**
+- **Q1 (25th percentile):** Lower quartile boundary
+- **Q3 (75th percentile):** Upper quartile boundary
+- **IQR:** Q3 - Q1 (spread of middle 50% of data)
+- **Lower Bound:** Q1 - 1.5 × IQR (values below are outliers)
+- **Upper Bound:** Q3 + 1.5 × IQR (values above are outliers)
+
+**Use Cases:**
+- Identifies properties with data entry errors
+- Flags unique properties (luxury renovations, unusual lot sizes)
+- Highlights properties needing additional investigation
+- Improves estimate reliability by identifying problematic comps
 
 ---
 
@@ -928,15 +1014,15 @@ function calculateAVMEstimate(property, comps) {
 6. ✅ **COMPLETED** - Defined constants for magic numbers (WEIGHTING_CONSTANTS object)
 7. ✅ **COMPLETED** - Market-specific appreciation data implemented (see `APPRECIATION_UPGRADE.md`)
 8. ✅ **COMPLETED** - Property adjustment factors implemented (CMA-style adjustments)
-9. ⚠️ Change standard deviation to use sample (N-1) instead of population (N)
-10. ⚠️ Add property data validation
-11. ⚠️ Add outlier detection for comps
+9. ✅ **COMPLETED** - Outlier detection implemented (IQR method with visual warnings)
+10. ⚠️ Change standard deviation to use sample (N-1) instead of population (N)
+11. ⚠️ Add property data validation
 
 ### Low Priority (Nice to Have)
-11. ✅ **COMPLETED** - Map visualization scaling uses linear scaling (proportional representation)
-12. ⚠️ Document weighting method use cases
-13. ⚠️ Add unit tests for core calculations
-14. ⚠️ Consider alternative valuation methods
+12. ✅ **COMPLETED** - Map visualization scaling uses linear scaling (proportional representation)
+13. ⚠️ Document weighting method use cases
+14. ⚠️ Add unit tests for core calculations
+15. ⚠️ Consider alternative valuation methods
 
 ---
 

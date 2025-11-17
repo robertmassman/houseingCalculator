@@ -385,6 +385,12 @@ tr.target-property-row:hover {
     color: white;
 }
 
+.badge-outlier {
+    background: #e74c3c;
+    color: white;
+    cursor: help;
+}
+
 .weight-cell {
     font-weight: 600;
     color: #9b59b6;
@@ -393,6 +399,12 @@ tr.target-property-row:hover {
 
 tr.high-influence {
     background: #f3e5f5 !important;
+}
+
+tr.outlier {
+    background: #fff3cd !important;
+    border-left: 3px solid #e74c3c !important;
+}
     border-left: 3px solid #9b59b6;
 }
 
