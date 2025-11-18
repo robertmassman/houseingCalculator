@@ -338,14 +338,14 @@ function calculatePropertyWeights(properties, targetProperty, method) {
 /**
  * Calculate adjustment factor for a comparable property based on differences from target
  * Standard in real estate appraisal (CMA - Comparative Market Analysis)
- * Adjustments are multiplicative to reflect compound effects of differences
+ * Adjustments are additive to show true property differences
  * 
  * @param {Object} comp - Comparable property object
  * @param {Object} target - Target property object
  * @returns {Object} - { adjustmentFactor: number, breakdown: object with individual adjustments }
  */
 function calculatePropertyAdjustments(comp, target) {
-    let adjustmentFactor = 1.0;
+    let totalAdjustmentPercent = 0;
     const breakdown = {
         size: 0,
         renovation: 0,
@@ -361,7 +361,7 @@ function calculatePropertyAdjustments(comp, target) {
         const sizeDiff = comp.buildingSQFT - target.buildingSQFT;
         const sizeAdjustment = -(sizeDiff / 100) * WEIGHTING_CONSTANTS.ADJUSTMENT_SIZE_PER_100SQFT;
         breakdown.size = sizeAdjustment;
-        adjustmentFactor *= (1 + sizeAdjustment);
+        totalAdjustmentPercent += sizeAdjustment;
     }
     
     // Renovation adjustment: ±10% for renovation status mismatch
@@ -370,10 +370,10 @@ function calculatePropertyAdjustments(comp, target) {
     if (comp.renovated && target.renovated) {
         if (comp.renovated === 'Yes' && target.renovated === 'No') {
             breakdown.renovation = -WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_PREMIUM;
-            adjustmentFactor *= (1 - WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_PREMIUM);
+            totalAdjustmentPercent -= WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_PREMIUM;
         } else if (comp.renovated === 'No' && target.renovated === 'Yes') {
             breakdown.renovation = WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_DISCOUNT;
-            adjustmentFactor *= (1 + WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_DISCOUNT);
+            totalAdjustmentPercent += WEIGHTING_CONSTANTS.ADJUSTMENT_RENOVATION_DISCOUNT;
         }
     }
     
@@ -384,7 +384,7 @@ function calculatePropertyAdjustments(comp, target) {
         const lotDiff = comp.propertySQFT - target.propertySQFT;
         const lotAdjustment = -(lotDiff / 500) * WEIGHTING_CONSTANTS.ADJUSTMENT_LOT_PER_500SQFT;
         breakdown.lotSize = lotAdjustment;
-        adjustmentFactor *= (1 + lotAdjustment);
+        totalAdjustmentPercent += lotAdjustment;
     }
     
     // Width adjustment: ±1.5% per foot difference
@@ -394,7 +394,7 @@ function calculatePropertyAdjustments(comp, target) {
         const widthDiff = comp.buildingWidthFeet - target.buildingWidthFeet;
         const widthAdjustment = -widthDiff * WEIGHTING_CONSTANTS.ADJUSTMENT_WIDTH_PER_FOOT;
         breakdown.width = widthAdjustment;
-        adjustmentFactor *= (1 + widthAdjustment);
+        totalAdjustmentPercent += widthAdjustment;
     }
     
     // Original details adjustment: +5% if comp has original details vs target without
@@ -402,17 +402,19 @@ function calculatePropertyAdjustments(comp, target) {
     if (comp.originalDetails && target.originalDetails) {
         if (comp.originalDetails === 'Yes' && target.originalDetails === 'No') {
             breakdown.originalDetails = -WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM;
-            adjustmentFactor *= (1 - WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM);
+            totalAdjustmentPercent -= WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM;
         } else if (comp.originalDetails === 'No' && target.originalDetails === 'Yes') {
             breakdown.originalDetails = WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM;
-            adjustmentFactor *= (1 + WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM);
+            totalAdjustmentPercent += WEIGHTING_CONSTANTS.ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM;
         }
     }
+    
+    const adjustmentFactor = 1.0 + totalAdjustmentPercent;
     
     return {
         adjustmentFactor,
         breakdown,
-        totalAdjustmentPercent: (adjustmentFactor - 1.0) * 100
+        totalAdjustmentPercent: totalAdjustmentPercent * 100
     };
 }
 
@@ -508,6 +510,290 @@ function calculateSimilarityScore(comp, target) {
 function formatNumber(value, decimals = 2) {
     if (!value) return '0';
     return value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+/**
+ * Format lot dimensions as W'×D'
+ * @param {number} widthFeet - Width in feet
+ * @param {number} depthFeet - Depth in feet
+ * @param {boolean} useFormatNumber - Whether to format numbers with commas (default: false)
+ * @returns {string} - Formatted lot dimensions (e.g., "25'×100'")
+ */
+function formatLotDimensions(widthFeet, depthFeet) {
+    return `${widthFeet}'×${depthFeet}'`;
+}
+
+/**
+ * Format building dimensions as W'×D'×Ffl
+ * @param {number} widthFeet - Width in feet
+ * @param {number} depthFeet - Depth in feet
+ * @param {number} floors - Number of floors
+ * @param {boolean} useFormatNumber - Whether to format numbers with commas (default: false)
+ * @returns {string} - Formatted building dimensions (e.g., "20'×50'×3fl")
+ */
+function formatBuildingDimensions(widthFeet, depthFeet, floors) {
+    return `${widthFeet}'×${depthFeet}'×${floors}fl`;
+}
+
+/**
+ * Format price per SQFT tooltip showing building and total property values
+ * @param {number} buildingPriceSQFT - Building price per SQFT
+ * @param {number} totalPriceSQFT - Total property price per SQFT
+ * @returns {string} - Formatted tooltip text
+ */
+function formatPriceSQFTTooltip(buildingPriceSQFT, totalPriceSQFT) {
+    return `Building: ${formatCurrency(buildingPriceSQFT)}\\nTotal Property: ${formatCurrency(totalPriceSQFT)}`;
+}
+
+/**
+ * Format sale price tooltip with appreciation details
+ * @param {Object} prop - Property object with sale and appreciation data
+ * @returns {string} - Formatted tooltip text
+ */
+function formatSalePriceTooltip(prop) {
+    if (prop.appreciationAmount > 1000) {
+        return `Sale Date: ${prop.sellDate}\\nOriginal: ${formatCurrency(prop.originalSalePrice || prop.salePrice)}\\nAdjustment: +${formatCurrency(prop.appreciationAmount)} (±${(prop.appreciationUncertainty || 0).toFixed(1)}%)\\nMethod: ${prop.appreciationMethod || 'compound'}\\nRange: ${formatCurrency(prop.adjustedSalePriceLow || prop.adjustedSalePrice)} - ${formatCurrency(prop.adjustedSalePriceHigh || prop.adjustedSalePrice)}`;
+    }
+    return `Sale Date: ${prop.sellDate}`;
+}
+
+/**
+ * Format adjustment breakdown tooltip
+ * @param {number} adjPercent - Total adjustment percentage
+ * @param {Object} breakdown - Breakdown object with individual adjustments
+ * @returns {string} - Formatted tooltip text
+ */
+function formatAdjustmentTooltip(adjPercent, breakdown) {
+    let tooltip = `Total: ${adjPercent >= 0 ? '+' : ''}${adjPercent.toFixed(1)}%\n`;
+    if (breakdown.size !== 0) tooltip += `Size: ${(breakdown.size * 100).toFixed(1)}%\n`;
+    if (breakdown.renovation !== 0) tooltip += `Renovation: ${(breakdown.renovation * 100).toFixed(1)}%\n`;
+    if (breakdown.lotSize !== 0) tooltip += `Lot Size: ${(breakdown.lotSize * 100).toFixed(1)}%\n`;
+    if (breakdown.width !== 0) tooltip += `Width: ${(breakdown.width * 100).toFixed(1)}%\n`;
+    if (breakdown.originalDetails !== 0) tooltip += `Details: ${(breakdown.originalDetails * 100).toFixed(1)}%\n`;
+    return tooltip;
+}
+
+/**
+ * Format similarity score tooltip
+ * @param {number} score - Similarity score
+ * @param {string} rating - Rating (Excellent, Good, Fair, Poor)
+ * @param {Object} breakdown - Breakdown object with individual components
+ * @returns {string} - Formatted tooltip text
+ */
+function formatSimilarityTooltip(score, rating, breakdown) {
+    return `Similarity: ${score.toFixed(1)} (${rating})\n` +
+        `Adjustment: ${(breakdown.adjustment || 0).toFixed(1)}\n` +
+        `Building Diff: ${(breakdown.size || 0).toFixed(1)}\n` +
+        `Lot Diff: ${(breakdown.lot || 0).toFixed(1)}\n` +
+        `Width Diff: ${(breakdown.width || 0).toFixed(1)}\n` +
+        `Date: ${(breakdown.date || 0).toFixed(1)}\n` +
+        `Renovation: ${(breakdown.renovation || 0).toFixed(1)}\n` +
+        `Details: ${(breakdown.originalDetails || 0).toFixed(1)}`;
+}
+
+/**
+ * Build adjustment cell HTML
+ * @param {boolean} included - Whether property is included
+ * @param {string} adjTooltip - Tooltip text
+ * @param {number} adjPercent - Adjustment percentage
+ * @returns {string} - HTML for adjustment cell
+ */
+function buildAdjustmentCell(included, adjTooltip, adjPercent) {
+    if (!included) return '<td class="adjustment-cell">-</td>';
+    const color = adjPercent > 0 ? '#27ae60' : adjPercent < 0 ? '#e74c3c' : '#666';
+    const fontWeight = Math.abs(adjPercent) > 5 ? '600' : '400';
+    const sign = adjPercent >= 0 ? '+' : '';
+    return `<td class="adjustment-cell" title="${adjTooltip}" style="color: ${color}; font-weight: ${fontWeight};">${sign}${adjPercent.toFixed(1)}%</td>`;
+}
+
+/**
+ * Build weight cell HTML
+ * @param {string} weightingMethod - Current weighting method
+ * @param {boolean} included - Whether property is included
+ * @param {number} weightPercent - Weight percentage
+ * @returns {string} - HTML for weight cell
+ */
+function buildWeightCell(weightingMethod, included, weightPercent) {
+    if (weightingMethod === 'simple') {
+        return '<td class="weight-cell" style="display: none;">-</td>';
+    }
+    const content = included ? formatNumber(weightPercent, 1) + '%' : '-';
+    return `<td class="weight-cell">${content}</td>`;
+}
+
+/**
+ * Build similarity cell HTML with color coding
+ * @param {Object|null} similarity - Similarity object with score, rating, breakdown
+ * @param {boolean} isBestMatch - Whether this is the best match
+ * @returns {string} - HTML for similarity cell
+ */
+function buildSimilarityCell(similarity, isBestMatch) {
+    if (!similarity) return '<td class="similarity-cell">-</td>';
+    
+    const score = similarity.score;
+    const rating = similarity.rating;
+    
+    // Color coding based on rating
+    let color = '#666';
+    if (rating === 'Excellent') color = '#27ae60';
+    else if (rating === 'Good') color = '#f39c12';
+    else if (rating === 'Fair') color = '#e67e22';
+    else if (rating === 'Poor') color = '#e74c3c';
+    
+    const similarityTooltip = formatSimilarityTooltip(score, rating, similarity.breakdown);
+    const bestMatchBadge = isBestMatch ? '<span class="badge badge-best-match" style="margin-left: 4px;">★</span>' : '';
+    const fontWeight = score < 20 ? '600' : '400';
+    
+    return `<td class="similarity-cell" title="${similarityTooltip}" style="color: ${color}; font-weight: ${fontWeight};">${score.toFixed(1)}${bestMatchBadge}</td>`;
+}
+
+/**
+ * Build sale price cell HTML with appreciation styling
+ * @param {Object} prop - Property object
+ * @returns {string} - HTML for sale price cell
+ */
+function buildSalePriceCell(prop) {
+    const salePriceTooltip = formatSalePriceTooltip(prop);
+    const salePriceStyle = prop.appreciationAmount > 1000 ? 'color: #27ae60; font-weight: 500;' : '';
+    return `<td><span style="${salePriceStyle}" title="${salePriceTooltip}">${formatCurrency(prop.adjustedSalePrice)}</span></td>`;
+}
+
+/**
+ * Render target property row and append to tbody
+ * @param {Object} targetProp - Target property object
+ * @param {number} medianBuildingPriceSQFT - Median building price per SQFT
+ * @param {string} weightingMethod - Weighting method being used
+ * @param {HTMLElement} tbody - Table body element to append to
+ */
+function renderTargetPropertyRow(targetProp, medianBuildingPriceSQFT, weightingMethod, tbody) {
+    const targetEstimatedPrice = targetProp.buildingSQFT * medianBuildingPriceSQFT;
+    const targetRow = document.createElement('tr');
+    targetRow.classList.add('target-property-row');
+    const targetLotDimensions = formatLotDimensions(targetProp.propertyWidthFeet, targetProp.propertyDepthFeet);
+    const targetBuildingDimensions = formatBuildingDimensions(targetProp.buildingWidthFeet, targetProp.buildingDepthFeet, targetProp.floors);
+    targetRow.innerHTML = `
+        <td class="checkbox-cell" colspan="2"><span class="badge badge-target">TARGET</span></td>
+        <td><strong>${targetProp.address}</strong></td>
+        <td>${targetProp.renovated}</td>
+        <td>${targetLotDimensions}</td>
+        <td>${targetBuildingDimensions}</td>
+        <td>${formatNumber(targetProp.buildingSQFT, 2)}</td>
+        <td style="color: #ff8c00; font-style: italic;">${formatCurrency(medianBuildingPriceSQFT)}</td>
+        <td style="color: #ff8c00; font-style: italic;">${formatCurrency(targetEstimatedPrice)}</td>
+        <td class="adjustment-cell">-</td>
+        <td class="weight-cell" style="${weightingMethod === 'simple' ? 'display: none;' : ''}">-</td>
+        <td class="similarity-cell">-</td>
+    `;
+    tbody.appendChild(targetRow);
+}
+
+/**
+ * Render a comparable property row and append to tbody
+ * @param {Object} prop - Comparable property object
+ * @param {Array} included - Array of included properties
+ * @param {Array} weights - Array of weight values for included properties
+ * @param {Object} targetProperty - Target property object
+ * @param {string} weightingMethod - Weighting method being used
+ * @param {HTMLElement} tbody - Table body element to append to
+ */
+function renderComparablePropertyRow(prop, included, weights, targetProperty, weightingMethod, tbody) {
+    const row = document.createElement('tr');
+    row.id = `comp-${prop.id}`;
+
+    // Calculate weight percentage based on method
+    let weightPercent = 0;
+    if (prop.included) {
+        const propIndex = included.findIndex(p => p.id === prop.id);
+        if (propIndex >= 0) {
+            weightPercent = weights[propIndex];
+        }
+    }
+    const isHighInfluence = weightPercent > (100 / included.length) * WEIGHTING_CONSTANTS.HIGH_INFLUENCE_MULTIPLIER;
+    const isVeryHighInfluence = weightPercent > (100 / included.length) * WEIGHTING_CONSTANTS.VERY_HIGH_INFLUENCE_MULTIPLIER;
+
+    // Calculate similarity score
+    const similarity = prop.included ? calculateSimilarityScore(prop, targetProperty) : null;
+    const isBestMatch = similarity && similarity.score < 10;
+    const isGoodMatch = similarity && similarity.score >= 10 && similarity.score < 20;
+
+    // Check if this is the direct comp
+    if (prop.isDirectComp) {
+        row.classList.add('highlighted');
+    }
+
+    if (!prop.included) {
+        row.classList.add('inactive');
+    }
+
+    // Add high-influence class if applicable (but not if very high influence)
+    if (weightingMethod !== 'simple' && prop.included && isHighInfluence && !isVeryHighInfluence) {
+        row.classList.add('high-influence');
+    }
+    
+    // Add very-high-influence class if applicable
+    if (weightingMethod !== 'simple' && prop.included && isVeryHighInfluence) {
+        row.classList.add('very-high-influence');
+    }
+    
+    // Add outlier class if flagged
+    if (prop.isOutlier) {
+        row.classList.add('outlier');
+    }
+    
+    // Add best-match class if applicable
+    if (isBestMatch) {
+        row.classList.add('best-match');
+    }
+
+    // Calculate property adjustment for this comp
+    const adjustment = calculatePropertyAdjustments(prop, targetProperty);
+    const adjPercent = adjustment.totalAdjustmentPercent;
+    
+    // Build tooltip showing breakdown of adjustments
+    const adjTooltip = formatAdjustmentTooltip(adjPercent, adjustment.breakdown);
+    
+    const adjustmentCell = buildAdjustmentCell(prop.included, adjTooltip, adjPercent);
+    const weightCell = buildWeightCell(weightingMethod, prop.included, weightPercent);
+    const similarityCell = buildSimilarityCell(similarity, isBestMatch);
+
+    // Build lot dimensions cell
+    const lotDimensionsCell = formatLotDimensions(prop.propertyWidthFeet, prop.propertyDepthFeet);
+    
+    // Build building dimensions cell
+    const buildingDimensionsCell = formatBuildingDimensions(prop.buildingWidthFeet, prop.buildingDepthFeet, prop.floors);
+    
+    // Build price/SQFT cell with tooltip showing total property $/SQFT
+    const priceSQFTTooltip = formatPriceSQFTTooltip(prop.buildingPriceSQFT, prop.totalPriceSQFT);
+    const priceSQFTCell = `<td title="${priceSQFTTooltip}">${formatCurrency(prop.buildingPriceSQFT)}</td>`;
+    
+    // Build sale price cell with date and appreciation info in tooltip
+    const salePriceCell = buildSalePriceCell(prop);
+
+    row.innerHTML = `
+                <td class="checkbox-cell">
+                    <input type="checkbox" ${prop.included ? 'checked' : ''} onchange="toggleComp(${prop.id})">
+                </td>
+                <td class="checkbox-cell">
+                    <input type="checkbox" ${prop.isDirectComp ? 'checked' : ''} onchange="toggleDirectComp(${prop.id})">
+                </td>
+                <td>
+                    ${prop.address}
+                    ${prop.isDirectComp ? '<span class="badge badge-direct-comp">Direct Comp</span>' : ''}
+                    ${weightingMethod !== 'simple' && prop.included && isVeryHighInfluence ? '<span class="badge badge-very-high-influence" title="Weight is 2x+ the average - extremely high influence on estimates">⚠️ Very High Influence</span>' : 
+                      weightingMethod !== 'simple' && prop.included && isHighInfluence ? '<span class="badge badge-high-influence" title="Weight is 1.5x+ the average - high influence on estimates">High Influence</span>' : ''}
+                    ${prop.isOutlier && prop.included ? '<span class="badge badge-outlier" title="Statistical outlier - unusual price/SQFT">⚠️ Outlier</span>' : ''}
+                </td>
+                <td>${prop.renovated}</td>
+                <td>${lotDimensionsCell}</td>
+                <td>${buildingDimensionsCell}</td>
+                <td>${formatNumber(prop.buildingSQFT, 2)}</td>
+                ${priceSQFTCell}
+                ${salePriceCell}
+                ${adjustmentCell}
+                ${weightCell}
+                ${similarityCell}
+            `;
+    tbody.appendChild(row);
 }
 
 // Calculate median from array of numbers
@@ -1051,13 +1337,13 @@ function renderTargetProperty() {
     const container = document.getElementById('target-property-fields');
     
     // Create compact single-line format
-    const lotDims = `${formatNumber(targetProperty.propertyWidthFeet, 0)}' × ${formatNumber(targetProperty.propertyDepthFeet, 0)}'`;
-    const buildingDims = `${formatNumber(targetProperty.buildingWidthFeet, 0)}' × ${formatNumber(targetProperty.buildingDepthFeet, 0)}' × ${targetProperty.floors}fl`;
+    const lotDims = formatLotDimensions(targetProperty.propertyWidthFeet, targetProperty.propertyDepthFeet);
+    const buildingDims = formatBuildingDimensions(targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet, targetProperty.floors).replace(/×/g, ' × ');
     
     container.innerHTML = `
         <div style="display: flex; flex-wrap: wrap; gap: 20px; padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 13px;">
-            <div><strong>Lot:</strong> ${lotDims} (${formatNumber(targetProperty.propertySQFT, 0)} sqft)</div>
-            <div><strong>Building:</strong> ${buildingDims} (${formatNumber(targetProperty.buildingSQFT, 0)} sqft)</div>
+            <div><strong>Lot:</strong> ${lotDims} (${targetProperty.propertySQFT} sqft)</div>
+            <div><strong>Building:</strong> ${buildingDims} (${targetProperty.buildingSQFT} sqft)</div>
             <div><strong>Renovated:</strong> ${targetProperty.renovated}</div>
             <div><strong>Tax Class:</strong> ${targetProperty.taxClass}</div>
             <div><strong>Occupancy:</strong> ${targetProperty.occupancy}</div>
@@ -1093,182 +1379,62 @@ function renderComparables() {
     // Calculate weights for all included properties using centralized utility function
     const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0);
     const weights = calculatePropertyWeights(included, targetProperty, weightingMethod);
+    
+    // Calculate median $/SQFT from included properties for CMA Price Target
+    const buildingPrices = included.map(p => p.buildingPriceSQFT);
+    const medianBuildingPriceSQFT = buildingPrices.length > 0 ? calculateMedian(buildingPrices) : 0;
 
-    // Sort comparable properties only (not target)
-    let sortedComparables = [...comparableProperties];
-    if (currentSortColumn !== null) {
-        sortedComparables = sortPropertiesByColumn(sortedComparables, currentSortColumn, currentSortDirection);
-    }
-
-    // Render target property row first (always at top)
+    // Create target property with sorting capabilities
     const targetForSort = { ...targetProperty, isTarget: true };
     
     // Calculate distance for target property
     calculateDistanceWeight(targetForSort);
     
-    const targetRow = document.createElement('tr');
-    targetRow.classList.add('target-property-row');
-    const targetLotDimensions = `${formatNumber(targetForSort.propertyWidthFeet, 0)}'×${formatNumber(targetForSort.propertyDepthFeet, 0)}'`;
-    const targetBuildingDimensions = `${formatNumber(targetForSort.buildingWidthFeet, 0)}'×${formatNumber(targetForSort.buildingDepthFeet, 0)}'×${targetForSort.floors}fl`;
-    targetRow.innerHTML = `
-        <td class="checkbox-cell" colspan="2"><span class="badge badge-target">TARGET</span></td>
-        <td><strong>${targetForSort.address}</strong></td>
-        <td>${targetForSort.renovated}</td>
-        <td>${targetLotDimensions}</td>
-        <td>${targetBuildingDimensions}</td>
-        <td>${formatNumber(targetForSort.buildingSQFT, 2)}</td>
-        <td>-</td>
-        <td>-</td>
-        <td class="adjustment-cell">-</td>
-        <td class="weight-cell" style="${weightingMethod === 'simple' ? 'display: none;' : ''}">-</td>
-        <td class="similarity-cell">-</td>
-    `;
-    tbody.appendChild(targetRow);
-
-    // Render comparable property rows
-    sortedComparables.forEach(prop => {
-        const row = document.createElement('tr');
-        row.id = `comp-${prop.id}`;
-
-        // Calculate weight percentage based on method
-        let weightPercent = 0;
-        if (prop.included) {
-            const propIndex = included.findIndex(p => p.id === prop.id);
-            if (propIndex >= 0) {
-                weightPercent = weights[propIndex];
-            }
-        }
-        const isHighInfluence = weightPercent > (100 / included.length) * WEIGHTING_CONSTANTS.HIGH_INFLUENCE_MULTIPLIER;
-        const isVeryHighInfluence = weightPercent > (100 / included.length) * WEIGHTING_CONSTANTS.VERY_HIGH_INFLUENCE_MULTIPLIER;
-
-        // Calculate similarity score
-        const similarity = prop.included ? calculateSimilarityScore(prop, targetProperty) : null;
-        const isBestMatch = similarity && similarity.score < 10;
-        const isGoodMatch = similarity && similarity.score >= 10 && similarity.score < 20;
-
-        // Check if this is the direct comp
-        if (prop.isDirectComp) {
-            row.classList.add('highlighted');
-        }
-
-        if (!prop.included) {
-            row.classList.add('inactive');
-        }
-
-        // Add high-influence class if applicable (but not if very high influence)
-        if (weightingMethod !== 'simple' && prop.included && isHighInfluence && !isVeryHighInfluence) {
-            row.classList.add('high-influence');
-        }
+    // Separate target and comparables for sorting
+    let sortedComparables = [...comparableProperties];
+    let sortedAllProperties = null;
+    
+    // Sort only comparable properties if a sort column is active
+    if (currentSortColumn !== null) {
+        // Check if this column has a value for target (columns 2-8 have values: Address, Reno, Lot, Building, SQFT, $/SQFT, Sale Price)
+        const targetHasValueForColumn = currentSortColumn >= 2 && currentSortColumn <= 8;
         
-        // Add very-high-influence class if applicable
-        if (weightingMethod !== 'simple' && prop.included && isVeryHighInfluence) {
-            row.classList.add('very-high-influence');
-        }
-        
-        // Add outlier class if flagged
-        if (prop.isOutlier) {
-            row.classList.add('outlier');
-        }
-        
-        // Add best-match class if applicable
-        if (isBestMatch) {
-            row.classList.add('best-match');
-        }
-
-        // Calculate property adjustment for this comp
-        const adjustment = calculatePropertyAdjustments(prop, targetProperty);
-        const adjPercent = adjustment.totalAdjustmentPercent;
-        
-        // Build tooltip showing breakdown of adjustments
-        const adjTooltip = `Total: ${adjPercent >= 0 ? '+' : ''}${adjPercent.toFixed(1)}%\n` +
-            (adjustment.breakdown.size !== 0 ? `Size: ${(adjustment.breakdown.size * 100).toFixed(1)}%\n` : '') +
-            (adjustment.breakdown.renovation !== 0 ? `Renovation: ${(adjustment.breakdown.renovation * 100).toFixed(1)}%\n` : '') +
-            (adjustment.breakdown.lotSize !== 0 ? `Lot Size: ${(adjustment.breakdown.lotSize * 100).toFixed(1)}%\n` : '') +
-            (adjustment.breakdown.width !== 0 ? `Width: ${(adjustment.breakdown.width * 100).toFixed(1)}%\n` : '') +
-            (adjustment.breakdown.originalDetails !== 0 ? `Details: ${(adjustment.breakdown.originalDetails * 100).toFixed(1)}%\n` : '');
-        
-        const adjustmentCell = prop.included ?
-            `<td class="adjustment-cell" title="${adjTooltip}" style="color: ${adjPercent > 0 ? '#27ae60' : adjPercent < 0 ? '#e74c3c' : '#666'}; font-weight: ${Math.abs(adjPercent) > 5 ? '600' : '400'};">${adjPercent >= 0 ? '+' : ''}${adjPercent.toFixed(1)}%</td>` :
-            '<td class="adjustment-cell">-</td>';
-
-        const weightCell = weightingMethod !== 'simple' ?
-            `<td class="weight-cell">${prop.included ? formatNumber(weightPercent, 1) + '%' : '-'}</td>` :
-            '<td class="weight-cell" style="display: none;">-</td>';
-
-        // Build similarity cell with color coding and tooltip
-        let similarityCell;
-        if (similarity) {
-            const score = similarity.score;
-            const rating = similarity.rating;
-            const breakdown = similarity.breakdown;
+        if (targetHasValueForColumn) {
+            // Add calculated values to targetForSort for sorting
+            targetForSort.buildingPriceSQFT = medianBuildingPriceSQFT;
+            targetForSort.adjustedSalePrice = targetForSort.buildingSQFT * medianBuildingPriceSQFT;
             
-            // Color coding based on rating
-            let color = '#666';
-            if (rating === 'Excellent') color = '#27ae60'; // Green
-            else if (rating === 'Good') color = '#f39c12'; // Orange
-            else if (rating === 'Fair') color = '#e67e22'; // Dark orange
-            else if (rating === 'Poor') color = '#e74c3c'; // Red
-            
-            // Build tooltip showing breakdown
-            const similarityTooltip = `Similarity: ${score.toFixed(1)} (${rating})\n` +
-                `Adjustment: ${(breakdown.adjustment || 0).toFixed(1)}\n` +
-                `Building Diff: ${(breakdown.size || 0).toFixed(1)}\n` +
-                `Lot Diff: ${(breakdown.lot || 0).toFixed(1)}\n` +
-                `Width Diff: ${(breakdown.width || 0).toFixed(1)}\n` +
-                `Date: ${(breakdown.date || 0).toFixed(1)}\n` +
-                `Renovation: ${(breakdown.renovation || 0).toFixed(1)}\n` +
-                `Details: ${(breakdown.originalDetails || 0).toFixed(1)}`;
-            
-            const bestMatchBadge = isBestMatch ? '<span class="badge badge-best-match" style="margin-left: 4px;">★</span>' : '';
-            
-            similarityCell = `<td class="similarity-cell" title="${similarityTooltip}" style="color: ${color}; font-weight: ${score < 20 ? '600' : '400'};">${score.toFixed(1)}${bestMatchBadge}</td>`;
+            // Sort target with comparables and keep the full sorted list
+            sortedAllProperties = [targetForSort, ...comparableProperties];
+            sortedAllProperties = sortPropertiesByColumn(sortedAllProperties, currentSortColumn, currentSortDirection);
         } else {
-            similarityCell = '<td class="similarity-cell">-</td>';
+            // Target doesn't have value for this column, sort only comparables
+            sortedComparables = sortPropertiesByColumn(sortedComparables, currentSortColumn, currentSortDirection);
         }
+    }
 
-        // Build lot dimensions cell
-        const lotDimensionsCell = `${formatNumber(prop.propertyWidthFeet, 0)}'×${formatNumber(prop.propertyDepthFeet, 0)}'`;
-        
-        // Build building dimensions cell
-        const buildingDimensionsCell = `${formatNumber(prop.buildingWidthFeet, 0)}'×${formatNumber(prop.buildingDepthFeet, 0)}'×${prop.floors}fl`;
-        
-        // Build price/SQFT cell with tooltip showing total property $/SQFT
-        const priceSQFTTooltip = `Building: ${formatCurrency(prop.buildingPriceSQFT)}\\nTotal Property: ${formatCurrency(prop.totalPriceSQFT)}`;
-        const priceSQFTCell = `<td title="${priceSQFTTooltip}">${formatCurrency(prop.buildingPriceSQFT)}</td>`;
-        
-        // Build sale price cell with date and appreciation info in tooltip
-        const salePriceTooltip = prop.appreciationAmount > 1000 ? 
-            `Sale Date: ${prop.sellDate}\\nOriginal: ${formatCurrency(prop.originalSalePrice || prop.salePrice)}\\nAdjustment: +${formatCurrency(prop.appreciationAmount)} (±${(prop.appreciationUncertainty || 0).toFixed(1)}%)\\nMethod: ${prop.appreciationMethod || 'compound'}\\nRange: ${formatCurrency(prop.adjustedSalePriceLow || prop.adjustedSalePrice)} - ${formatCurrency(prop.adjustedSalePriceHigh || prop.adjustedSalePrice)}` :
-            `Sale Date: ${prop.sellDate}`;
-        const salePriceStyle = prop.appreciationAmount > 1000 ? 'color: #27ae60; font-weight: 500;' : '';
-        const salePriceCell = `<td><span style="${salePriceStyle}" title="${salePriceTooltip}">${formatCurrency(prop.adjustedSalePrice)}</span></td>`;
+    // Render rows (target will be in sorted position for columns 2-6, or always first for others)
+    if (sortedAllProperties) {
+        // Target is sorted with comparables - render in sorted order
+        sortedAllProperties.forEach(prop => {
+            if (prop.isTarget) {
+                // Render target property row with calculated median values
+                renderTargetPropertyRow(prop, medianBuildingPriceSQFT, weightingMethod, tbody);
+                return; // Skip to next property
+            }
+            
+            // Render comparable property row
+            renderComparablePropertyRow(prop, included, weights, targetProperty, weightingMethod, tbody);
+        });
+    } else {
+        // Target stays at top - render target first, then sorted comparables
+        renderTargetPropertyRow(targetForSort, medianBuildingPriceSQFT, weightingMethod, tbody);
 
-        row.innerHTML = `
-                    <td class="checkbox-cell">
-                        <input type="checkbox" ${prop.included ? 'checked' : ''} onchange="toggleComp(${prop.id})">
-                    </td>
-                    <td class="checkbox-cell">
-                        <input type="checkbox" ${prop.isDirectComp ? 'checked' : ''} onchange="toggleDirectComp(${prop.id})">
-                    </td>
-                    <td>
-                        ${prop.address}
-                        ${prop.isDirectComp ? '<span class="badge badge-direct-comp">Direct Comp</span>' : ''}
-                        ${weightingMethod !== 'simple' && prop.included && isVeryHighInfluence ? '<span class="badge badge-very-high-influence" title="Weight is 2x+ the average - extremely high influence on estimates">⚠️ Very High Influence</span>' : 
-                          weightingMethod !== 'simple' && prop.included && isHighInfluence ? '<span class="badge badge-high-influence" title="Weight is 1.5x+ the average - high influence on estimates">High Influence</span>' : ''}
-                        ${prop.isOutlier && prop.included ? '<span class="badge badge-outlier" title="Statistical outlier - unusual price/SQFT">⚠️ Outlier</span>' : ''}
-                    </td>
-                    <td>${prop.renovated}</td>
-                    <td>${lotDimensionsCell}</td>
-                    <td>${buildingDimensionsCell}</td>
-                    <td>${formatNumber(prop.buildingSQFT, 2)}</td>
-                    ${priceSQFTCell}
-                    ${salePriceCell}
-                    ${adjustmentCell}
-                    ${weightCell}
-                    ${similarityCell}
-                `;
-        tbody.appendChild(row);
-    });
+        // Render comparable property rows
+        sortedComparables.forEach(prop => {
+            renderComparablePropertyRow(prop, included, weights, targetProperty, weightingMethod, tbody);
+        });
+    }
 
     calculateAndRenderAverages();
 }
@@ -1288,85 +1454,57 @@ function sortPropertiesByColumn(properties, columnIndex, direction) {
                 aVal = a.renovated;
                 bVal = b.renovated;
                 return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-            case 4: // Original Details
-                aVal = a.originalDetails || '';
-                bVal = b.originalDetails || '';
-                return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-            case 5: // Property SQFT
-                aVal = a.propertySQFT;
-                bVal = b.propertySQFT;
+            case 4: // Lot dimensions (W×D) - sort by width primarily
+                aVal = a.propertyWidthFeet || 0;
+                bVal = b.propertyWidthFeet || 0;
                 break;
-            case 6: // Building Width
-                aVal = a.buildingWidthFeet;
-                bVal = b.buildingWidthFeet;
+            case 5: // Building dimensions (W×D×Fl) - sort by building width primarily
+                aVal = a.buildingWidthFeet || 0;
+                bVal = b.buildingWidthFeet || 0;
                 break;
-            case 7: // Building Depth
-                aVal = a.buildingDepthFeet;
-                bVal = b.buildingDepthFeet;
+            case 6: // Building SQFT
+                aVal = a.buildingSQFT || 0;
+                bVal = b.buildingSQFT || 0;
                 break;
-            case 8: // Floors
-                aVal = a.floors;
-                bVal = b.floors;
+            case 7: // $/SQFT (Building Price per SQFT)
+                aVal = a.buildingPriceSQFT || 0;
+                bVal = b.buildingPriceSQFT || 0;
                 break;
-            case 9: // Building SQFT
-                aVal = a.buildingSQFT;
-                bVal = b.buildingSQFT;
-                break;
-            case 10: // Building $ SQFT
-                aVal = a.buildingPriceSQFT;
-                bVal = b.buildingPriceSQFT;
-                break;
-            case 11: // Total $ SQFT
-                aVal = a.totalPriceSQFT;
-                bVal = b.totalPriceSQFT;
-                break;
-            case 12: // Sale Price
+            case 8: // Sale Price
                 aVal = a.adjustedSalePrice || 0;
                 bVal = b.adjustedSalePrice || 0;
                 break;
-            case 13: // Adjustment %
-                aVal = a.included ? calculatePropertyAdjustments(a, targetProperty).totalAdjustmentPercent : 999;
-                bVal = b.included ? calculatePropertyAdjustments(b, targetProperty).totalAdjustmentPercent : 999;
-                break;
-            case 14: // Weight %
-                aVal = a.weight || 0;
-                bVal = b.weight || 0;
-                break;
-            case 15: // Distance
-                aVal = a.distanceToKeyLocation !== undefined ? a.distanceToKeyLocation : 999;
-                bVal = b.distanceToKeyLocation !== undefined ? b.distanceToKeyLocation : 999;
-                break;
-            case 16: // Similarity
-                aVal = a.included ? calculateSimilarityScore(a, targetProperty).score : 999;
-                bVal = b.included ? calculateSimilarityScore(b, targetProperty).score : 999;
-                break;
-            case 17: // Sale Date
-                aVal = a.sellDate;
-                bVal = b.sellDate;
-                // Parse dates for comparison
-                if (aVal === 'N/A') aVal = new Date(0);
-                else {
-                    const aParts = aVal.split('/');
-                    let aYear = parseInt(aParts[2]);
-                    if (aYear < 100) aYear += aYear < 50 ? 2000 : 1900;
-                    aVal = new Date(aYear, parseInt(aParts[0]) - 1, parseInt(aParts[1]));
+            case 9: // Adjustment %
+                // Target property doesn't have this value, put it at end when sorting
+                if (a.isTarget) {
+                    aVal = direction === 'asc' ? Infinity : -Infinity;
+                } else {
+                    aVal = a.included ? calculatePropertyAdjustments(a, targetProperty).totalAdjustmentPercent : 999;
                 }
-                if (bVal === 'N/A') bVal = new Date(0);
-                else {
-                    const bParts = bVal.split('/');
-                    let bYear = parseInt(bParts[2]);
-                    if (bYear < 100) bYear += bYear < 50 ? 2000 : 1900;
-                    bVal = new Date(bYear, parseInt(bParts[0]) - 1, parseInt(bParts[1]));
+                if (b.isTarget) {
+                    bVal = direction === 'asc' ? Infinity : -Infinity;
+                } else {
+                    bVal = b.included ? calculatePropertyAdjustments(b, targetProperty).totalAdjustmentPercent : 999;
                 }
-                return direction === 'asc' ? aVal - bVal : bVal - aVal;
-            case 18: // Tax Class
-                aVal = String(a.taxClass);
-                bVal = String(b.taxClass);
-                return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-            case 19: // Occupancy
-                aVal = a.occupancy;
-                bVal = b.occupancy;
-                return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                break;
+            case 10: // Weight %
+                // Target property doesn't have this value, put it at end when sorting
+                aVal = a.isTarget ? (direction === 'asc' ? Infinity : -Infinity) : (a.weight || 0);
+                bVal = b.isTarget ? (direction === 'asc' ? Infinity : -Infinity) : (b.weight || 0);
+                break;
+            case 11: // Similarity
+                // Target property doesn't have this value, put it at end when sorting
+                if (a.isTarget) {
+                    aVal = direction === 'asc' ? Infinity : -Infinity;
+                } else {
+                    aVal = a.included ? calculateSimilarityScore(a, targetProperty).score : 999;
+                }
+                if (b.isTarget) {
+                    bVal = direction === 'asc' ? Infinity : -Infinity;
+                } else {
+                    bVal = b.included ? calculateSimilarityScore(b, targetProperty).score : 999;
+                }
+                break;
             default:
                 return 0;
         }
@@ -1418,8 +1556,8 @@ function updateSortIndicators() {
 function initializeColumnSorting() {
     const headers = document.querySelectorAll('#comps-table thead th');
     headers.forEach((header, index) => {
-        // Skip checkbox columns (0 and 1) and weight column (13)
-        if (index === 0 || index === 1 || index === 13) return;
+        // Skip checkbox columns (0 and 1)
+        if (index === 0 || index === 1) return;
 
         header.style.cursor = 'pointer';
         header.title = 'Click to sort';
@@ -1685,6 +1823,124 @@ function calculateWidthPremium(targetWidth, compWidths) {
 }
 
 /**
+ * Calculate location-based price adjustment using three factors:
+ * 1. Amenity proximity (transit, restaurants, parks) - walkability premium
+ * 2. Value zone clustering (expensive vs cheap neighborhood effect)
+ * 3. Comp proximity penalty (when similar properties are far away)
+ * 
+ * @param {Object} targetProperty - Target property with coordinates
+ * @param {Array} includedComps - Filtered comparable properties
+ * @returns {Object} - { adjustment, breakdown, description }
+ */
+function calculateLocationAdjustment(targetProperty, includedComps) {
+    if (!targetProperty.coordinates || includedComps.length === 0) {
+        return { 
+            adjustment: 0, 
+            breakdown: {},
+            description: 'No location data'
+        };
+    }
+    
+    // === FACTOR 1: AMENITY PROXIMITY PREMIUM ===
+    // Properties near transit/amenities command a premium
+    // Based on distance to key locations (already calculated)
+    const amenityWeight = targetProperty.distanceToKeyLocation !== undefined 
+        ? Math.exp(-targetProperty.distanceToKeyLocation / WEIGHTING_CONSTANTS.DISTANCE_WEIGHT_HALFLIFE_MILES)
+        : 0.5;
+    
+    // Premium scale: 0-5% of base value (strong amenity proximity = up to 5% premium)
+    // Max premium at 0 miles, decays to near-zero by 1 mile
+    const amenityPremiumPercent = amenityWeight * 0.05; // 0-5%
+    
+    // === FACTOR 2: VALUE ZONE CLUSTERING ===
+    // Properties in expensive neighborhoods command a premium
+    // Calculate median price of nearby properties (within 0.125 miles)
+    const nearbyComps = includedComps.filter(comp => {
+        if (!comp.coordinates) return false;
+        const distance = calculateDistance(
+            targetProperty.coordinates.lat,
+            targetProperty.coordinates.lng,
+            comp.coordinates.lat,
+            comp.coordinates.lng
+        );
+        return distance <= 0.125; // Within ~2 blocks
+    });
+    
+    let valueZonePremiumPercent = 0;
+    if (nearbyComps.length >= 2) {
+        const nearbyPrices = nearbyComps.map(c => c.buildingPriceSQFT);
+        const allPrices = includedComps.map(c => c.buildingPriceSQFT);
+        
+        const nearbyMedian = calculateMedian(nearbyPrices);
+        const overallMedian = calculateMedian(allPrices);
+        
+        // If nearby properties are more expensive, apply premium
+        // If cheaper, apply discount
+        const priceDifferencePercent = (nearbyMedian - overallMedian) / overallMedian;
+        
+        // Scale to ±3% max (capped to prevent extreme adjustments)
+        valueZonePremiumPercent = Math.max(-0.03, Math.min(0.03, priceDifferencePercent * 0.5));
+    }
+    
+    // === FACTOR 3: COMPARABLE DISTANCE PENALTY ===
+    // When the best comps are far away, there's more uncertainty
+    // Calculate weighted average distance to included comps
+    const compDistances = includedComps
+        .filter(c => c.coordinates)
+        .map(comp => calculateDistance(
+            targetProperty.coordinates.lat,
+            targetProperty.coordinates.lng,
+            comp.coordinates.lat,
+            comp.coordinates.lng
+        ));
+    
+    let distancePenaltyPercent = 0;
+    if (compDistances.length > 0) {
+        const avgDistance = compDistances.reduce((sum, d) => sum + d, 0) / compDistances.length;
+        
+        // Penalty increases with distance:
+        // 0-0.125 miles: no penalty
+        // 0.125-0.5 miles: -1% to -2%
+        // 0.5+ miles: -2% to -3%
+        if (avgDistance > 0.125) {
+            const excessDistance = avgDistance - 0.125;
+            distancePenaltyPercent = -Math.min(0.03, excessDistance * 0.05); // Max -3% penalty
+        }
+    }
+    
+    // === COMBINE FACTORS ===
+    const totalAdjustmentPercent = amenityPremiumPercent + valueZonePremiumPercent + distancePenaltyPercent;
+    
+    // Calculate dollar adjustment based on estimated base value
+    // Use building SQFT × median comp price as base
+    const medianBuildingPrice = calculateMedian(includedComps.map(c => c.buildingPriceSQFT));
+    const baseValue = targetProperty.buildingSQFT * medianBuildingPrice;
+    const adjustmentAmount = baseValue * totalAdjustmentPercent;
+    
+    return {
+        adjustment: Math.round(adjustmentAmount),
+        breakdown: {
+            amenityPremium: Math.round(baseValue * amenityPremiumPercent),
+            amenityPremiumPercent: (amenityPremiumPercent * 100).toFixed(2) + '%',
+            amenityDistance: targetProperty.distanceToKeyLocation !== undefined 
+                ? formatNumber(targetProperty.distanceToKeyLocation, 2) + ' mi'
+                : 'N/A',
+            valueZonePremium: Math.round(baseValue * valueZonePremiumPercent),
+            valueZonePremiumPercent: (valueZonePremiumPercent * 100).toFixed(2) + '%',
+            nearbyCompCount: nearbyComps.length,
+            distancePenalty: Math.round(baseValue * distancePenaltyPercent),
+            distancePenaltyPercent: (distancePenaltyPercent * 100).toFixed(2) + '%',
+            avgCompDistance: compDistances.length > 0 
+                ? formatNumber(compDistances.reduce((sum, d) => sum + d, 0) / compDistances.length, 2) + ' mi'
+                : 'N/A'
+        },
+        description: totalAdjustmentPercent >= 0.01 ? 'Premium location' 
+                   : totalAdjustmentPercent <= -0.01 ? 'Discount location'
+                   : 'Average location'
+    };
+}
+
+/**
  * Detect statistical outliers using IQR (Interquartile Range) method
  * Industry-standard approach for identifying unusual comparable properties
  * @param {Array} values - Array of numeric values (e.g., price per SQFT)
@@ -1862,11 +2118,14 @@ function calculateAndRenderEstimates() {
     const landAdj = calculateLandAdjustment(targetProperty.propertySQFT, compLotSizes);
     const widthAdj = calculateWidthPremium(targetProperty.buildingWidthFeet, compWidths);
     
-    // Block/location adjustment (placeholder - can be enhanced with block-specific data)
-    const blockAdjustment = 0; // TODO: Add block-by-block premium/discount data
+    // Calculate distance to key locations for target property (needed for location adjustment)
+    calculateDistanceWeight(targetProperty);
     
-    // Total qualitative adjustments (lot size difference, width premium, block)
-    const totalAdjustments = landAdj.adjustment + widthAdj.premium + blockAdjustment;
+    // Location adjustment (NEW: uses amenity proximity, value zones, and comp distance)
+    const locationAdj = calculateLocationAdjustment(targetProperty, included);
+    
+    // Total qualitative adjustments (lot size difference, width premium, location)
+    const totalAdjustments = landAdj.adjustment + widthAdj.premium + locationAdj.adjustment;
     
     // NYC Appraisal Method: Base Value + Qualitative Adjustments
     const nycEstimateWeighted = nycBaseValueWeighted + totalAdjustments;
@@ -2066,12 +2325,24 @@ function calculateAndRenderEstimates() {
                     ${widthAdj.premium !== 0 ? `
                     <div style="margin-bottom: 8px; color: ${widthAdj.premium >= 0 ? '#27ae60' : '#e74c3c'};">
                         <strong style="color: #333;">Width:</strong> ${widthAdj.premium >= 0 ? '+' : ''}${formatCurrency(widthAdj.premium)}
-                        <span style="font-size: 0.85em; color: #666;">(${widthAdj.description}: ${formatNumber(targetProperty.buildingWidthFeet, 1)}' vs ${formatNumber(widthAdj.typical, 1)}')</span>
+                        <span style="font-size: 0.85em; color: #666;">(${widthAdj.description}: ${targetProperty.buildingWidthFeet}' vs ${widthAdj.typical}')</span>
                     </div>
                     ` : ''}
-                    ${blockAdjustment !== 0 ? `
-                    <div style="margin-bottom: 8px; color: ${blockAdjustment >= 0 ? '#27ae60' : '#e74c3c'};">
-                        <strong>Location:</strong> ${blockAdjustment >= 0 ? '+' : ''}${formatCurrency(blockAdjustment)}
+                    ${locationAdj.adjustment !== 0 ? `
+                    <div style="margin-bottom: 8px; color: ${locationAdj.adjustment >= 0 ? '#27ae60' : '#e74c3c'};">
+                        <strong style="color: #333;">Location:</strong> ${locationAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(locationAdj.adjustment)}
+                        <span style="font-size: 0.85em; color: #666;">(${locationAdj.description})</span>
+                        <div style="margin-left: 20px; margin-top: 4px; font-size: 0.8em; color: #888;">
+                            ${locationAdj.breakdown.amenityPremium !== 0 ? `
+                            <div>• Amenity: ${locationAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(locationAdj.breakdown.amenityPremium)} (${locationAdj.breakdown.amenityDistance} to transit)</div>
+                            ` : ''}
+                            ${locationAdj.breakdown.valueZonePremium !== 0 ? `
+                            <div>• Value Zone: ${locationAdj.breakdown.valueZonePremium >= 0 ? '+' : ''}${formatCurrency(locationAdj.breakdown.valueZonePremium)} (${locationAdj.breakdown.nearbyCompCount} nearby comps)</div>
+                            ` : ''}
+                            ${locationAdj.breakdown.distancePenalty !== 0 ? `
+                            <div>• Comp Distance: ${formatCurrency(locationAdj.breakdown.distancePenalty)} (avg ${locationAdj.breakdown.avgCompDistance})</div>
+                            ` : ''}
+                        </div>
                     </div>
                     ` : ''}
                     ${totalAdjustments !== 0 ? `
@@ -2102,11 +2373,11 @@ function calculateAndRenderEstimates() {
             <div class="estimate-formula">Old Method (70% Building + 30% Land+Building Blend)</div>
             <div class="confidence-interval">
                 <div class="ci-row"><span class="ci-label">Method A (Building-Based)</span> <span class="ci-value">${formatCurrency(estimateAMedian)}</span></div> 
-                <div class="estimate-formula">${formatNumber(targetBuildingSQFTWithFloors, 2)} SQFT × ${formatCurrency(medianBuildingPriceSQFT)} Building Median $ SQFT</div> 
+                <div class="estimate-formula">${targetBuildingSQFTWithFloors} SQFT × ${formatCurrency(medianBuildingPriceSQFT)} Building Median $ SQFT</div> 
             </div> 
             <div class="confidence-interval">
                 <div class="ci-row"><span class="ci-label">Method B (Total Property-Based)</span><span class="ci-value">${formatCurrency(estimateBMedian)}</div>
-                <div class="estimate-formula">${formatNumber(targetTotalSQFT, 2)} SQFT × ${formatCurrency(medianTotalPriceSQFT)} Total Median $ SQFT</div> 
+                <div class="estimate-formula">${targetTotalSQFT} SQFT × ${formatCurrency(medianTotalPriceSQFT)} Total Median $ SQFT</div> 
             </div>
             <div class="confidence-interval">
                 <div class="ci-row"><span class="ci-label">Weighted Average:</span> <span class="ci-value">${formatCurrency(blendedEstimate)}</span></div>
@@ -2121,40 +2392,13 @@ function calculateAndRenderEstimates() {
     const directCompValue = directCompProp ? directCompProp.adjustedSalePrice : 0;
     const directCompAddress = directCompProp ? directCompProp.address : 'None selected';
 
-    // Use direct comp's actual $/SQFT values (no blending)
     let directCompBuildingPriceSQFT = 0;
-    let directCompTotalPriceSQFT = 0;
     let directCompEstimate = 0;
-    let directCompTotalEstimate = 0;
-    let directCompTargetTotalSQFT = 0;
-    
-    // CMA-adjusted direct comp values
-    let directCompAdjustment = null;
-    let directCompAdjustedSalePrice = 0;
-    let directCompAdjustedBuildingPriceSQFT = 0;
-    let directCompAdjustedEstimate = 0;
-
-    if (directCompProp) {
-        // Use the direct comp's actual $/SQFT values without any blending
-        directCompBuildingPriceSQFT = directCompProp.buildingPriceSQFT;
-        directCompTotalPriceSQFT = directCompProp.totalPriceSQFT;
-
-        // Calculate estimates using target property dimensions
-        directCompEstimate = directCompBuildingPriceSQFT * targetBuildingSQFTWithFloors;
-        directCompTargetTotalSQFT = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
-        directCompTotalEstimate = directCompTotalPriceSQFT * directCompTargetTotalSQFT;
-        
-        // Calculate CMA-adjusted values
-        // Use appreciation-adjusted price, then apply CMA adjustment factor
-        directCompAdjustment = calculatePropertyAdjustments(directCompProp, targetProperty);
-        directCompAdjustedSalePrice = directCompProp.adjustedSalePrice * directCompAdjustment.adjustmentFactor;
-        directCompAdjustedBuildingPriceSQFT = directCompAdjustedSalePrice / directCompProp.buildingSQFT;
-        directCompAdjustedEstimate = directCompAdjustedBuildingPriceSQFT * targetBuildingSQFTWithFloors;
-    }
+    directCompBuildingPriceSQFT = directCompProp.buildingPriceSQFT;
+    directCompEstimate = directCompBuildingPriceSQFT * targetBuildingSQFTWithFloors;
 
     // Reference values
     const refContainer = document.getElementById('reference-values');
-    const weightingMethodLabel = weightingMethod === 'simple' ? '' : avgTypeMap[weightingMethod];
     refContainer.innerHTML = `
         <div class="estimate-box minimized">
             <h4>Direct Comp Sale Price</h4>
@@ -2164,19 +2408,8 @@ function calculateAndRenderEstimates() {
         <div class="estimate-box minimized">
             <h4>Direct Comp Building-Based</h4>
             <div class="estimate-value">${formatCurrency(directCompEstimate)}</div>
-            <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompBuildingPriceSQFT) + ' × (' + targetProperty.floors + ' floors × ' + formatNumber(targetProperty.buildingWidthFeet, 2) + ' × ' + formatNumber(targetProperty.buildingDepthFeet, 2) + ')' : 'No comp selected'}</div>
+            <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompBuildingPriceSQFT) + ' × (' + targetProperty.floors + ' floors × ' + targetProperty.buildingWidthFeet + ' × ' + targetProperty.buildingDepthFeet + ')' : 'No comp selected'}</div>
         </div>
-        <div class="estimate-box minimized">
-            <h4>Direct Comp Adjusted</h4>
-            <div class="estimate-value">${formatCurrency(directCompAdjustedSalePrice)}</div>
-            <div class="average-count" style="margin-top: 5px;">${directCompProp ? 'CMA Adjustment: ' + (directCompAdjustment.totalAdjustmentPercent >= 0 ? '+' : '') + directCompAdjustment.totalAdjustmentPercent.toFixed(1) + '% (Comp is ' + (directCompAdjustment.totalAdjustmentPercent < 0 ? 'better' : 'worse') + ' than target)' : 'No comp selected'}</div>
-            <div class="average-count" style="margin-top: 3px; font-size: 0.85em; opacity: 0.9;">${directCompProp ? 'Adjusted $/SQFT: ' + formatCurrency(directCompAdjustedBuildingPriceSQFT) : ''}</div>
-        </div>
-        <!-- <div class="estimate-box minimized">
-            <h4>Direct Comp Total-Based</h4>
-            <div class="estimate-value">${formatCurrency(directCompTotalEstimate)}</div>
-            <div class="average-count" style="margin-top: 5px;">${directCompProp ? formatCurrency(directCompTotalPriceSQFT) + ' × ' + formatNumber(directCompTargetTotalSQFT, 2) + ' SQFT' : 'No comp selected'}</div>
-        </div> -->
     `;
 
     calculateAndRenderAverages();
@@ -2214,7 +2447,7 @@ function changeTargetProperty() {
 window.changeTargetProperty = changeTargetProperty;
 
 // Quick filter functions
-function selectAllComps() {
+/*function selectAllComps() {
     comparableProperties.forEach(p => p.included = true);
     renderComparables();
     calculateAndRenderEstimates();
@@ -2244,7 +2477,7 @@ function filterTaxClass1() {
     renderComparables();
     calculateAndRenderEstimates();
     updateMap();
-}
+}*/
 
 // Set weighting method directly
 function setWeightingMethod(method) {
@@ -2268,10 +2501,10 @@ function setWeightingMethod(method) {
 window.setWeightingMethod = setWeightingMethod;
 
 // Expose filter functions to global scope
-window.selectAllComps = selectAllComps;
-window.deselectAllComps = deselectAllComps;
-window.filterRenovated = filterRenovated;
-window.filterTaxClass1 = filterTaxClass1;
+//window.selectAllComps = selectAllComps;
+//window.deselectAllComps = deselectAllComps;
+//window.filterRenovated = filterRenovated;
+//window.filterTaxClass1 = filterTaxClass1;
 
 // ============================================
 // MAP FUNCTIONALITY
@@ -2490,7 +2723,7 @@ function createPopupContent(prop, isTarget = false) {
         { label: 'Total $/SQFT', value: formatCurrency(prop.totalPriceSQFT || 0) },
         { label: 'Property SQFT', value: formatNumber(prop.propertySQFT, 0) },
         { label: 'Building SQFT', value: formatNumber(prop.buildingSQFT, 0) },
-        { label: 'Dimensions', value: `${formatNumber(prop.buildingWidthFeet, 0)}' × ${formatNumber(prop.buildingDepthFeet, 0)}' × ${prop.floors}fl` },
+        { label: 'Dimensions', value: formatBuildingDimensions(prop.buildingWidthFeet, prop.buildingDepthFeet, prop.floors).replace(/×/g, ' × ') },
         { label: 'Renovated', value: prop.renovated },
         { label: 'Original Details', value: prop.originalDetails || 'N/A' },
         { label: 'Tax Class', value: prop.taxClass },
