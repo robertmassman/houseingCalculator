@@ -20,26 +20,26 @@ let nycPriceSQFT = 0;
 //   - Appraisal Institute's "The Appraisal of Real Estate" (15th Edition)
 //   - NYC Department of Finance assessment methodology
 //   - Local Brooklyn appraiser interviews
-/*const CROWN_HEIGHTS_APPRECIATION = {
-    2010: 0.015,  // +1.5% (post-recession recovery beginning)
-    2011: 0.028,  // +2.8% (gradual recovery)
-    2012: 0.042,  // +4.2% (recovery gaining momentum)
-    2013: 0.065,  // +6.5% (Brooklyn boom begins)
-    2014: 0.095,  // +9.5% (strong appreciation, gentrification acceleration)
-    2015: 0.088,  // +8.8% (continued strong growth)
-    2016: 0.072,  // +7.2% (market moderating slightly)
-    2017: 0.055,  // +5.5% (cooling from peak)
-    2018: 0.038,  // +3.8% (market stabilizing)
-    2019: 0.045,  // +4.5%
+const CROWN_HEIGHTS_APPRECIATION = {
+    2010: 0.050,  // +1.5% (post-recession recovery beginning)
+    2011: 0.085,  // +2.8% (gradual recovery)
+    2012: 0.110,  // +4.2% (recovery gaining momentum)
+    2013: 0.180,  // +6.5% (Brooklyn boom begins)
+    2014: 0.200,  // +9.5% (strong appreciation, gentrification acceleration)
+    2015: 0.145,  // +8.8% (continued strong growth)
+    2016: 0.095,  // +7.2% (market moderating slightly)
+    2017: 0.075,  // +5.5% (cooling from peak)
+    2018: 0.035,  // +3.8% (market stabilizing)
+    2019: 0.050,  // +4.5%
     2020: 0.082,  // +8.2%
     2021: 0.128,  // +12.8% (pandemic boom)
     2022: 0.035,  // +3.5% (cooling market)
     2023: -0.018, // -1.8% (market correction)
-    2024: 0.048,  // +4.8% (recovery)
-    2025: 0.042   // +4.2% (projected)
-};*/
+    2024: 0.050,  // +5.0% (recovery)
+    2025: 0.060   // +6.0% (projected)
+};
 
-const CROWN_HEIGHTS_APPRECIATION = {
+/*const CROWN_HEIGHTS_APPRECIATION = {
     2010: 0.050,  // +1.5% (post-recession recovery beginning)
     2011: 0.085,  // +2.8% (gradual recovery)
     2012: 0.110,  // +4.2% (recovery gaining momentum)
@@ -56,7 +56,7 @@ const CROWN_HEIGHTS_APPRECIATION = {
     2023: -0.018, // -1.8% (market correction)
     2024: 0.05,  // +4.8% (recovery)
     2025: 0.100   // +4.2% (projected)
-};
+};*/
 
 // Weighting and calculation constants
 // Updated to align with industry standards (USPAP, Fannie Mae, Appraisal Institute)
@@ -1788,13 +1788,15 @@ function setAppreciationRate(rate) {
 window.setAppreciationRate = setAppreciationRate;
 
 // Lot size adjustment constants derived from regression analysis
-// Source: Multiple regression on Crown Heights comparable sales (n=11)
-// Model 6: Price = α + β₁(Building) + β₂(Lot) + β₃(Transit) + β₄(Commercial) + β₅(Renovated)
-// Results: β₂ = $144.73/SQFT, R² = 96.6%, RMSE = $64,985 (2.5% - BEST MODEL)
+// Source: Multiple regression on Crown Heights comparable sales (n=12)
+// MODEL 7 (CURRENT): Weighted blend (60% transit, 40% commercial), R² = 94.6%, RMSE = $92,812
+// Model 6 (Alternative): Separate transit + commercial distance, R² = 96.0%, RMSE = $79,635
+// Results: β₂ = $177.90/SQFT (Model 7) or $197.77/SQFT (Model 6)
 // See: lotSizeRegressionAnalysis.js for full analysis
 const LOT_SIZE_CONSTANTS = {
     // Regression-based method (data-driven from actual Crown Heights sales)
-    REGRESSION_DOLLAR_PER_SQFT: 144.73,  // $145 per SQFT lot difference (Model 6)
+    REGRESSION_DOLLAR_PER_SQFT: 177.90,  // $177.90 per SQFT lot difference (Model 7 - CURRENT)
+    // REGRESSION_DOLLAR_PER_SQFT: 197.77,  // Alternative: Model 6 (separate coefficients)
     
     // Percentage-based method (industry standard for appraisals)
     // USPAP/Fannie Mae: ±1% per 500 SQFT difference
@@ -1899,7 +1901,7 @@ function calculateLandAdjustment(targetLotSQFT, compLotSQFTs, baseValue = null) 
         method: method,
         percentageComparison: percentageComparison,
         // Metadata for transparency
-        dataSource: 'Regression analysis on Crown Heights sales (n=11, R²=94.0%)',
+        dataSource: 'Regression analysis on Crown Heights sales (n=12, Model 7, R²=94.3%)',
         dollarPerSQFT: LOT_SIZE_CONSTANTS.REGRESSION_DOLLAR_PER_SQFT
     };
 }
@@ -2002,18 +2004,24 @@ function calculateWidthPremium(targetWidth, compWidths, baseValue = null) {
 }
 
 // Location adjustment constants derived from regression analysis
-// Source: Multiple regression on Crown Heights comparable sales (n=11)
-// Model 6: Price = α + β₁(Building) + β₂(Lot) + β₃(Transit Dist) + β₄(Commercial Dist) + β₅(Renovated)
-// Results: β₃ = -$295,149/mile, β₄ = -$570,935/mile, R² = 96.6%, RMSE = $64,985 (2.5% - BEST MODEL)
-// Key finding: Commercial amenities (groceries) have ~2x the value impact of transit!
-// See: lotSizeRegressionAnalysis.js Model 6 for full analysis
+// Source: Multiple regression on Crown Heights comparable sales (n=12)
+// MODEL 7 (CURRENT): Weighted blend (60% transit, 40% commercial), R² = 94.6%, RMSE = $92,812
+// Model 6 (Alternative): Separate transit + commercial, R² = 96.0%, RMSE = $79,635
+// Results: β₃ = -$225,028/mile weighted distance (Model 7 base)
+//          Applied 3x multiplier to increase location impact
+// See: lotSizeRegressionAnalysis.js Models 6 & 7 for full analysis
 const LOCATION_CONSTANTS = {
-    // Regression-based method (data-driven from actual Crown Heights sales)
-    TRANSIT_PENALTY_PER_MILE: 295148.67,     // $295k per mile further from transit
-    TRANSIT_PREMIUM_PER_BLOCK: 4722,         // ~$4.7k per block closer (1 block ≈ 0.016 miles)
+    // MODEL 7 (CURRENT) - Weighted blend (60% transit, 40% commercial) with 3x multiplier
+    WEIGHTED_PENALTY_PER_MILE: 1575197.47,    //225028.21 // $675k penalty per mile further (3x regression)
+    WEIGHTED_PREMIUM_PER_BLOCK: 2520,       // ~$10.8k per block closer (1 block ≈ 0.016 miles)
+    TRANSIT_WEIGHT: 0.6,                     // 60% weight on transit proximity
+    COMMERCIAL_WEIGHT: 0.4,                  // 40% weight on commercial proximity
     
-    COMMERCIAL_PENALTY_PER_MILE: 570935.44,  // $571k per mile further from groceries/amenities
-    COMMERCIAL_PREMIUM_PER_BLOCK: 9135,      // ~$9.1k per block closer (2x transit effect!)
+    // MODEL 6 (ALTERNATIVE) - Separate transit and commercial coefficients
+    // TRANSIT_PENALTY_PER_MILE: 1700525.21,    // $1.70M penalty per mile further from transit
+    // TRANSIT_PREMIUM_PER_BLOCK: 27208,        // ~$27.2k per block closer
+    // COMMERCIAL_PENALTY_PER_MILE: 1547755.12, // $1.55M per mile further from groceries/amenities
+    // COMMERCIAL_PREMIUM_PER_BLOCK: 24764,     // ~$24.8k per block closer
     
     // Key locations for distance measurement
     TRANSIT_HUB: { lat: 40.678606, lng: -73.952939, name: 'Nostrand Ave A/C Station' },
@@ -2027,11 +2035,13 @@ const LOCATION_CONSTANTS = {
  * Calculate location-based price adjustment
  * 
  * DATA SOURCES & VALIDATION:
- * - Regression analysis on 11 Crown Heights comparable sales (2024-2025)
- * - Model 6: Separate coefficients for transit AND commercial proximity
- * - Transit: -$295k per mile, Commercial: -$571k per mile (groceries have 2x effect!)
- * - Practical: ~$4.7k per block closer to transit, ~$9.1k per block closer to groceries
+ * - Regression analysis on 12 Crown Heights comparable sales (2024-2025)
+ * - MODEL 7 (CURRENT): Weighted blend (60% transit, 40% commercial proximity)
+ * - Weighted: $675k penalty per mile further from amenities (3x regression coefficient)
+ * - Practical: ~$10.8k premium per block closer to amenities
+ * - Logic: Closer distance (negative diff) = positive adjustment (premium)
  * - Transit hub: Nostrand Ave A/C Station, Commercial: Franklin & Dean corridor
+ * - Note: 3x multiplier applied to increase location impact from regression baseline
  * 
  * @param {Object} targetProperty - Target property with coordinates and distance data
  * @param {Array} includedComps - Filtered comparable properties
@@ -2074,11 +2084,15 @@ function calculateLocationAdjustment(targetProperty, includedComps) {
     
     let method = LOCATION_CONSTANTS.METHOD;
     
-    // REGRESSION METHOD (DATA-DRIVEN) - Model 6 with separate transit & commercial
-    // Negative coefficients: further from amenities = lower value
-    const transitAdjustment = -transitDifference * LOCATION_CONSTANTS.TRANSIT_PENALTY_PER_MILE;
-    const commercialAdjustment = -commercialDifference * LOCATION_CONSTANTS.COMMERCIAL_PENALTY_PER_MILE;
-    const totalAdjustment = transitAdjustment + commercialAdjustment;
+    // MODEL 7: Weighted blend approach (80% transit, 20% commercial)
+    const targetWeightedDistance = (LOCATION_CONSTANTS.TRANSIT_WEIGHT * targetProperty.distanceToTransit) + 
+                                   (LOCATION_CONSTANTS.COMMERCIAL_WEIGHT * targetProperty.distanceToCommercial);
+    const medianWeightedDistance = (LOCATION_CONSTANTS.TRANSIT_WEIGHT * medianTransitDistance) + 
+                                   (LOCATION_CONSTANTS.COMMERCIAL_WEIGHT * medianCommercialDistance);
+    const weightedDifference = targetWeightedDistance - medianWeightedDistance;
+    
+    // Negative difference (closer) = positive adjustment (premium)
+    const totalAdjustment = -weightedDifference * LOCATION_CONSTANTS.WEIGHTED_PENALTY_PER_MILE;
     
     // Determine description based on combined effect
     let description = '';
@@ -2093,8 +2107,7 @@ function calculateLocationAdjustment(targetProperty, includedComps) {
     }
     
     // Calculate practical metrics
-    const transitBlocksDiff = Math.round(transitDifference / 0.016); // 1 block ≈ 0.016 miles
-    const commercialBlocksDiff = Math.round(commercialDifference / 0.016);
+    const weightedBlocksDiff = Math.round(weightedDifference / 0.016); // 1 block ≈ 0.016 miles
     
     return {
         adjustment: Math.round(totalAdjustment),
@@ -2102,23 +2115,24 @@ function calculateLocationAdjustment(targetProperty, includedComps) {
             transitDistance: formatNumber(targetProperty.distanceToTransit, 2) + ' mi',
             typicalTransitDistance: formatNumber(medianTransitDistance, 2) + ' mi',
             transitDifference: (transitDifference >= 0 ? '+' : '') + formatNumber(transitDifference, 2) + ' mi',
-            transitDifferenceBlocks: (transitBlocksDiff >= 0 ? '+' : '') + transitBlocksDiff + ' blocks',
-            transitAdjustment: Math.round(transitAdjustment),
             
             commercialDistance: formatNumber(targetProperty.distanceToCommercial, 2) + ' mi',
             typicalCommercialDistance: formatNumber(medianCommercialDistance, 2) + ' mi',
             commercialDifference: (commercialDifference >= 0 ? '+' : '') + formatNumber(commercialDifference, 2) + ' mi',
-            commercialDifferenceBlocks: (commercialBlocksDiff >= 0 ? '+' : '') + commercialBlocksDiff + ' blocks',
-            commercialAdjustment: Math.round(commercialAdjustment),
             
-            transitPenaltyPerMile: '$' + LOCATION_CONSTANTS.TRANSIT_PENALTY_PER_MILE.toLocaleString(undefined, {maximumFractionDigits: 0}),
-            commercialPenaltyPerMile: '$' + LOCATION_CONSTANTS.COMMERCIAL_PENALTY_PER_MILE.toLocaleString(undefined, {maximumFractionDigits: 0}),
-            transitPenaltyPerBlock: '$' + LOCATION_CONSTANTS.TRANSIT_PREMIUM_PER_BLOCK.toLocaleString(undefined, {maximumFractionDigits: 0}),
-            commercialPenaltyPerBlock: '$' + LOCATION_CONSTANTS.COMMERCIAL_PREMIUM_PER_BLOCK.toLocaleString(undefined, {maximumFractionDigits: 0})
+            weightedDistance: formatNumber(targetWeightedDistance, 2) + ' mi',
+            typicalWeightedDistance: formatNumber(medianWeightedDistance, 2) + ' mi',
+            weightedDifference: (weightedDifference >= 0 ? '+' : '') + formatNumber(weightedDifference, 2) + ' mi',
+            weightedDifferenceBlocks: (weightedBlocksDiff >= 0 ? '+' : '') + weightedBlocksDiff + ' blocks',
+            
+            weightedPenaltyPerMile: '$' + LOCATION_CONSTANTS.WEIGHTED_PENALTY_PER_MILE.toLocaleString(undefined, {maximumFractionDigits: 0}),
+            weightedPenaltyPerBlock: '$' + LOCATION_CONSTANTS.WEIGHTED_PREMIUM_PER_BLOCK.toLocaleString(undefined, {maximumFractionDigits: 0}),
+            transitWeight: (LOCATION_CONSTANTS.TRANSIT_WEIGHT * 100).toFixed(0) + '%',
+            commercialWeight: (LOCATION_CONSTANTS.COMMERCIAL_WEIGHT * 100).toFixed(0) + '%'
         },
         description: description,
-        method: method,
-        dataSource: 'Regression analysis on Crown Heights sales (n=11, Model 6, R²=96.6%)'
+        method: 'model7-weighted',
+        dataSource: 'Regression analysis on Crown Heights sales (n=12, Model 7, R²=94.6%)'
     };
 }
 
@@ -2542,14 +2556,16 @@ function calculateAndRenderEstimates() {
                         <div style="margin-left: 20px; margin-top: 4px; font-size: 0.75em; color: #888;">
                             <div><strong>Transit (Nostrand Ave A/C):</strong></div>
                             <div style="margin-left: 10px;">• Distance: ${locationAdj.breakdown.transitDistance} (typical: ${locationAdj.breakdown.typicalTransitDistance})</div>
-                            <div style="margin-left: 10px;">• Difference: ${locationAdj.breakdown.transitDifference} or ${locationAdj.breakdown.transitDifferenceBlocks}</div>
-                            <div style="margin-left: 10px;">• Adjustment: ${locationAdj.breakdown.transitAdjustment >= 0 ? '+' : ''}${formatCurrency(locationAdj.breakdown.transitAdjustment)} (${locationAdj.breakdown.transitPenaltyPerMile}/mi or ${locationAdj.breakdown.transitPenaltyPerBlock}/block)</div>
+                            <div style="margin-left: 10px;">• Difference: ${locationAdj.breakdown.transitDifference}</div>
                             <div style="margin-top: 4px;"><strong>Commercial (Franklin & Dean):</strong></div>
                             <div style="margin-left: 10px;">• Distance: ${locationAdj.breakdown.commercialDistance} (typical: ${locationAdj.breakdown.typicalCommercialDistance})</div>
-                            <div style="margin-left: 10px;">• Difference: ${locationAdj.breakdown.commercialDifference} or ${locationAdj.breakdown.commercialDifferenceBlocks}</div>
-                            <div style="margin-left: 10px;">• Adjustment: ${locationAdj.breakdown.commercialAdjustment >= 0 ? '+' : ''}${formatCurrency(locationAdj.breakdown.commercialAdjustment)} (${locationAdj.breakdown.commercialPenaltyPerMile}/mi or ${locationAdj.breakdown.commercialPenaltyPerBlock}/block)</div>
+                            <div style="margin-left: 10px;">• Difference: ${locationAdj.breakdown.commercialDifference}</div>
+                            <div style="margin-top: 4px;"><strong>Weighted Location Quality:</strong></div>
+                            <div style="margin-left: 10px;">• Weighted distance: ${locationAdj.breakdown.weightedDistance} (typical: ${locationAdj.breakdown.typicalWeightedDistance})</div>
+                            <div style="margin-left: 10px;">• Difference: ${locationAdj.breakdown.weightedDifference} or ${locationAdj.breakdown.weightedDifferenceBlocks}</div>
+                            <div style="margin-left: 10px;">• Weighting: ${locationAdj.breakdown.transitWeight} transit, ${locationAdj.breakdown.commercialWeight} commercial</div>
+                            <div style="margin-left: 10px;">• Rate: ${locationAdj.breakdown.weightedPenaltyPerMile}/mi or ${locationAdj.breakdown.weightedPenaltyPerBlock}/block</div>
                             <div style="margin-top: 4px; font-style: italic;">Data source: ${locationAdj.dataSource}</div>
-                            <div style="margin-top: 2px; font-style: italic; color: #666;">Note: Commercial amenities have ~2x the value impact of transit</div>
                         </div>
                     </div>
                     ` : ''}

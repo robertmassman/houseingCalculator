@@ -9,7 +9,6 @@ export const targetProperty = [
         floors: 5,
         buildingWidthFeet: 16.67,
         buildingDepthFeet: 45,
-        //buildingStories: 3,
         listPrice: 3250000.00,
         estimatedSale: 0.00,
         priceOnACRIS: 0.00,
@@ -36,7 +35,6 @@ export const targetProperty = [
         floors: 5,
         buildingWidthFeet: 18.00,
         buildingDepthFeet: 47.00,
-        //buildingStories: 3,
         listPrice: 2850000.00,
         estimatedSale: 0.00,
         priceOnACRIS: 0.00,
@@ -49,6 +47,50 @@ export const targetProperty = [
         coordinates: { lat: 40.673169, lng: -73.948462 },
         distanceToTransit: 0.4429,  // miles to Nostrand Ave A/C Station
         distanceToCommercial: 0.4844,  // miles to Franklin & Dean Commercial
-    }
+    },
+    {
+        address: "Test 1150 Dean St, Brooklyn, NY 11216",
+        renovated: "Yes",
+        originalDetails: "Yes",
+        propertyWidthFeet: 20.00,
+        propertyDepthFeet: 114.42,
+        floors: 4,
+        buildingWidthFeet: 20.00,
+        buildingDepthFeet: 52.00,
+        listPrice: 3500000.00,
+        estimatedSale: 0.00,
+        priceOnACRIS: 0.00,
+        sellDate: "N/A",
+        block: 1212,
+        lot: 21,
+        occupancy: "B9 - MISCELLANEOUS TWO FAMILY",
+        taxClass: "1",
+        taxes: 5086.12,
+        coordinates: { lat: 40.676804, lng: -73.951574 },
+        distanceToTransit: 0.1436,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.2228,  // miles to Franklin & Dean Commercial
+    },
+    {
+        address: "Test 1219 Dean St, Brooklyn, NY 11216",
+        renovated: "Yes",
+        originalDetails: "Yes",
+        propertyWidthFeet: 20,
+        propertyDepthFeet: 100,
+        floors: 5,
+        buildingWidthFeet: 20,
+        buildingDepthFeet: 50,
+        listPrice: 3500000.00,
+        estimatedSale: 0.00,
+        priceOnACRIS: 0.00,
+        sellDate: "N/A",
+        block: 1207,
+        lot: 61,
+        occupancy: "A4 - CITY RESIDENCE ONE FAMILY",
+        taxClass: "1",
+        taxes: 6785.30,
+        coordinates: { lat: 40.6770163, lng: -73.9488718 },
+        distanceToTransit: 0.2398,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.3606,  // miles to Franklin & Dean Commercial
+    },
 ];
 
