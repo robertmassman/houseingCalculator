@@ -727,10 +727,12 @@ tr.high-influence:hover {
 
 .map-legend {
     background: white;
-    padding: 10px;
+    padding: 10px 15px;
     border-radius: 6px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     font-size: 13px;
+    display: block;
+    width: 100%;
 }
 
 .map-legend h4 {
@@ -741,9 +743,9 @@ tr.high-influence:hover {
 }
 
 .legend-item {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    margin: 5px 0;
+    margin: 0 15px 0 0;
 }
 
 .legend-color {

@@ -125,14 +125,15 @@ const WEIGHTING_CONSTANTS = {
     ADJUSTMENT_WIDTH_PER_FOOT: 0.015,         // ±1.5% per foot of width difference (industry: 1-2%)
     ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM: 0.05, // +5% if comp has original details vs target without (industry: 3-8%)
     
-    // Similarity score weighting factors (lower score = better match)
-    // These determine how much each factor contributes to the overall similarity score
-    SIMILARITY_ADJUSTMENT_WEIGHT: 3.0,        // CMA adjustment % is most important
-    SIMILARITY_SIZE_WEIGHT: 1.5,              // Building size difference weight
-    SIMILARITY_LOT_WEIGHT: 1.0,               // Lot size difference weight
-    SIMILARITY_WIDTH_WEIGHT: 2.0,             // Width difference weight (per foot)
+    // Similarity score weights (aligned with regression Model 6, R²=96.6%)
+    // Based on actual Crown Heights data showing relative importance of factors
+    SIMILARITY_TRANSIT_WEIGHT: 15.0,          // Transit proximity (most important: $295k/mi = $4.7k/block)
+    SIMILARITY_COMMERCIAL_WEIGHT: 30.0,       // Commercial proximity (2x transit: $571k/mi = $9.1k/block)
+    SIMILARITY_SIZE_WEIGHT: 2.0,              // Building size difference weight (primary factor)
+    SIMILARITY_LOT_WEIGHT: 1.5,               // Lot size difference weight ($145/SQFT in regression)
+    SIMILARITY_WIDTH_WEIGHT: 1.0,             // Width difference weight (per foot)
     SIMILARITY_DATE_WEIGHT: 0.5,              // Date recency weight (per year)
-    SIMILARITY_RENOVATION_MISMATCH: 5.0,      // Renovation status mismatch penalty
+    SIMILARITY_RENOVATION_MISMATCH: 8.0,      // Renovation status mismatch penalty (significant in regression)
     SIMILARITY_ORIGINAL_DETAILS_MISMATCH: 3.0 // Original details mismatch penalty
 };
 
@@ -458,9 +459,14 @@ function calculatePropertyAdjustments(comp, target) {
 }
 
 /**
- * Calculate similarity score for a comparable property
+ * Calculate similarity score between comparable and target property
  * Lower score = better match to target property
- * Combines CMA adjustments with property characteristic differences
+ * Based on regression Model 6 (R²=96.6%) showing actual importance of factors:
+ * - Commercial proximity: Most important ($571k/mile = $9.1k/block)
+ * - Transit proximity: Very important ($295k/mile = $4.7k/block)
+ * - Building size: Primary factor (base valuation)
+ * - Lot size: Moderate ($145/SQFT)
+ * - Renovation: Significant premium
  * @param {Object} comp - Comparable property object
  * @param {Object} target - Target property object
  * @returns {Object} - { score: number, breakdown: object, rating: string }
@@ -469,13 +475,26 @@ function calculateSimilarityScore(comp, target) {
     let score = 0;
     const breakdown = {};
     
-    // 1. CMA Adjustment component (most important - typically 0-30 points)
-    const adjustment = calculatePropertyAdjustments(comp, target);
-    const adjustmentPoints = Math.abs(adjustment.totalAdjustmentPercent) * WEIGHTING_CONSTANTS.SIMILARITY_ADJUSTMENT_WEIGHT;
-    breakdown.adjustment = adjustmentPoints;
-    score += adjustmentPoints;
+    // 1. Commercial proximity difference (MOST important - typically 0-30 points)
+    // Regression: $571k/mile = $9.1k/block, so 1 block = ~1.5% of $2.5M property
+    if (comp.distanceToCommercial !== undefined && target.distanceToCommercial !== undefined) {
+        const commercialDiffMiles = Math.abs(comp.distanceToCommercial - target.distanceToCommercial);
+        const commercialPoints = commercialDiffMiles * WEIGHTING_CONSTANTS.SIMILARITY_COMMERCIAL_WEIGHT;
+        breakdown.commercial = commercialPoints;
+        score += commercialPoints;
+    }
     
-    // 2. Building size difference (typically 0-15 points)
+    // 2. Transit proximity difference (very important - typically 0-15 points)
+    // Regression: $295k/mile = $4.7k/block
+    if (comp.distanceToTransit !== undefined && target.distanceToTransit !== undefined) {
+        const transitDiffMiles = Math.abs(comp.distanceToTransit - target.distanceToTransit);
+        const transitPoints = transitDiffMiles * WEIGHTING_CONSTANTS.SIMILARITY_TRANSIT_WEIGHT;
+        breakdown.transit = transitPoints;
+        score += transitPoints;
+    }
+    
+    // 3. Building size difference (important - typically 0-20 points)
+    // Primary valuation metric in regression
     if (comp.buildingSQFT && target.buildingSQFT) {
         const sizeDiffPercent = Math.abs(comp.buildingSQFT - target.buildingSQFT) / target.buildingSQFT * 100;
         const sizePoints = sizeDiffPercent * WEIGHTING_CONSTANTS.SIMILARITY_SIZE_WEIGHT;
@@ -483,7 +502,8 @@ function calculateSimilarityScore(comp, target) {
         score += sizePoints;
     }
     
-    // 3. Lot size difference (typically 0-10 points)
+    // 4. Lot size difference (moderate - typically 0-15 points)
+    // Regression: $145/SQFT, so 100 SQFT = $14.5k ≈ 0.6% of $2.5M
     if (comp.propertySQFT && target.propertySQFT) {
         const lotDiffPercent = Math.abs(comp.propertySQFT - target.propertySQFT) / target.propertySQFT * 100;
         const lotPoints = lotDiffPercent * WEIGHTING_CONSTANTS.SIMILARITY_LOT_WEIGHT;
@@ -491,7 +511,8 @@ function calculateSimilarityScore(comp, target) {
         score += lotPoints;
     }
     
-    // 4. Width difference (typically 0-10 points)
+    // 5. Width difference (minor - typically 0-5 points)
+    // Couldn't measure independently in regression due to multicollinearity with building SQFT
     if (comp.buildingWidthFeet && target.buildingWidthFeet) {
         const widthDiff = Math.abs(comp.buildingWidthFeet - target.buildingWidthFeet);
         const widthPoints = widthDiff * WEIGHTING_CONSTANTS.SIMILARITY_WIDTH_WEIGHT;
@@ -499,7 +520,7 @@ function calculateSimilarityScore(comp, target) {
         score += widthPoints;
     }
     
-    // 5. Sale date recency (typically 0-5 points)
+    // 6. Sale date recency (minor - typically 0-3 points)
     const saleDate = parseACRISDate(comp.sellDate);
     if (saleDate) {
         const yearsAgo = daysBetween(saleDate) / 365.25;
@@ -507,11 +528,12 @@ function calculateSimilarityScore(comp, target) {
         breakdown.date = datePoints;
         score += datePoints;
     } else {
-        breakdown.date = 5.0; // Penalty for missing date
-        score += 5.0;
+        breakdown.date = 3.0; // Penalty for missing date
+        score += 3.0;
     }
     
-    // 6. Renovation status mismatch (0 or 5 points)
+    // 7. Renovation status mismatch (important - 0 or 8 points)
+    // Regression showed significant premium for renovated properties
     if (comp.renovated && target.renovated) {
         if (comp.renovated !== target.renovated) {
             breakdown.renovation = WEIGHTING_CONSTANTS.SIMILARITY_RENOVATION_MISMATCH;
@@ -521,7 +543,7 @@ function calculateSimilarityScore(comp, target) {
         }
     }
     
-    // 7. Original details mismatch (0 or 3 points)
+    // 8. Original details mismatch (minor - 0 or 3 points)
     if (comp.originalDetails && target.originalDetails) {
         if (comp.originalDetails !== target.originalDetails) {
             breakdown.originalDetails = WEIGHTING_CONSTANTS.SIMILARITY_ORIGINAL_DETAILS_MISMATCH;
@@ -531,11 +553,11 @@ function calculateSimilarityScore(comp, target) {
         }
     }
     
-    // Determine rating based on score
+    // Determine rating based on score (adjusted thresholds for new scale)
     let rating = 'Fair';
-    if (score < 10) rating = 'Excellent';
-    else if (score < 20) rating = 'Good';
-    else if (score < 35) rating = 'Fair';
+    if (score < 15) rating = 'Excellent';
+    else if (score < 30) rating = 'Good';
+    else if (score < 50) rating = 'Fair';
     else rating = 'Poor';
     
     return {
@@ -621,7 +643,8 @@ function formatAdjustmentTooltip(adjPercent, breakdown) {
  */
 function formatSimilarityTooltip(score, rating, breakdown) {
     return `Similarity: ${score.toFixed(1)} (${rating})\n` +
-        `Adjustment: ${(breakdown.adjustment || 0).toFixed(1)}\n` +
+        `Commercial Dist: ${(breakdown.commercial || 0).toFixed(1)}\n` +
+        `Transit Dist: ${(breakdown.transit || 0).toFixed(1)}\n` +
         `Building Diff: ${(breakdown.size || 0).toFixed(1)}\n` +
         `Lot Diff: ${(breakdown.lot || 0).toFixed(1)}\n` +
         `Width Diff: ${(breakdown.width || 0).toFixed(1)}\n` +
@@ -709,6 +732,24 @@ function renderTargetPropertyRow(targetProp, medianBuildingPriceSQFT, weightingM
     const targetPriceSQFT = nycPriceSQFT > 0 ? nycPriceSQFT : medianBuildingPriceSQFT;
     const targetEstimatedPrice = nycEstimateValue > 0 ? nycEstimateValue : (targetProp.buildingSQFT * medianBuildingPriceSQFT);
     
+    // Calculate difference between list price and estimated price
+    let priceDifferenceHTML = '';
+    if (targetProp.listPrice && targetProp.listPrice > 0 && targetEstimatedPrice > 0) {
+        const priceDifference = targetProp.listPrice - targetEstimatedPrice;
+        const priceDifferencePercent = (priceDifference / targetEstimatedPrice) * 100;
+        const isOverpriced = priceDifference > 0;
+        const differenceColor = isOverpriced ? '#e74c3c' : '#27ae60';
+        const differenceSign = isOverpriced ? '+' : '';
+        
+        priceDifferenceHTML = `
+            <br>
+            <span style="font-size: 0.85em; color: ${differenceColor};">
+                List: ${formatCurrency(targetProp.listPrice)} 
+                (${differenceSign}${formatCurrency(priceDifference)} / ${differenceSign}${priceDifferencePercent.toFixed(1)}%)
+            </span>
+        `;
+    }
+    
     const targetRow = document.createElement('tr');
     targetRow.classList.add('target-property-row');
     const targetLotDimensions = formatLotDimensions(targetProp.propertyWidthFeet, targetProp.propertyDepthFeet);
@@ -721,8 +762,10 @@ function renderTargetPropertyRow(targetProp, medianBuildingPriceSQFT, weightingM
         <td>${targetBuildingDimensions}</td>
         <td>${formatNumber(targetProp.buildingSQFT, 2)}</td>
         <td style="color: #ff8c00; font-style: italic;">${formatCurrency(targetPriceSQFT)}</td>
-        <td style="color: #ff8c00; font-style: italic;">${formatCurrency(targetEstimatedPrice)}</td>
-        <td class="adjustment-cell">-</td>
+        <td style="color: #ff8c00; font-style: italic;">
+            ${formatCurrency(targetEstimatedPrice)}
+            ${priceDifferenceHTML}
+        </td>
         <td class="weight-cell" style="${weightingMethod === 'simple' ? 'display: none;' : ''}">-</td>
         <td class="similarity-cell">-</td>
     `;
@@ -787,14 +830,6 @@ function renderComparablePropertyRow(prop, included, weights, targetProperty, we
         row.classList.add('best-match');
     }
 
-    // Calculate property adjustment for this comp
-    const adjustment = calculatePropertyAdjustments(prop, targetProperty);
-    const adjPercent = adjustment.totalAdjustmentPercent;
-    
-    // Build tooltip showing breakdown of adjustments
-    const adjTooltip = formatAdjustmentTooltip(adjPercent, adjustment.breakdown);
-    
-    const adjustmentCell = buildAdjustmentCell(prop.included, adjTooltip, adjPercent);
     const weightCell = buildWeightCell(weightingMethod, prop.included, weightPercent);
     const similarityCell = buildSimilarityCell(similarity, isBestMatch);
 
@@ -831,7 +866,6 @@ function renderComparablePropertyRow(prop, included, weights, targetProperty, we
                 <td>${formatNumber(prop.buildingSQFT, 2)}</td>
                 ${priceSQFTCell}
                 ${salePriceCell}
-                ${adjustmentCell}
                 ${weightCell}
                 ${similarityCell}
             `;
@@ -1382,11 +1416,31 @@ function renderTargetProperty() {
     const lotDims = formatLotDimensions(targetProperty.propertyWidthFeet, targetProperty.propertyDepthFeet);
     const buildingDims = formatBuildingDimensions(targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet, targetProperty.floors).replace(/×/g, ' × ');
     
+    // Calculate list price vs estimate difference
+    let priceInfoHTML = '';
+    if (targetProperty.listPrice && targetProperty.listPrice > 0) {
+        priceInfoHTML = `<div><strong>List Price:</strong> ${formatCurrency(targetProperty.listPrice)}`;
+        
+        // If we have a calculated estimate, show the difference
+        if (nycEstimateValue > 0) {
+            const priceDifference = targetProperty.listPrice - nycEstimateValue;
+            const priceDifferencePercent = (priceDifference / nycEstimateValue) * 100;
+            const isOverpriced = priceDifference > 0;
+            const differenceColor = isOverpriced ? '#e74c3c' : '#27ae60';
+            const differenceSign = isOverpriced ? '+' : '';
+            
+            priceInfoHTML += ` <span style="color: ${differenceColor}; font-weight: bold;">(${differenceSign}${formatCurrency(priceDifference)} / ${differenceSign}${priceDifferencePercent.toFixed(1)}% vs estimate)</span>`;
+        }
+        
+        priceInfoHTML += `</div>`;
+    }
+    
     container.innerHTML = `
         <div style="display: flex; flex-wrap: wrap; gap: 20px; padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 13px;">
             <div><strong>Lot:</strong> ${lotDims} (${formatNumber(targetProperty.propertySQFT,0)} sqft)</div>
             <div><strong>Building:</strong> ${buildingDims} (${formatNumber(targetProperty.buildingSQFT,0)} sqft)</div>
             <div><strong>Renovated:</strong> ${targetProperty.renovated}</div>
+            ${priceInfoHTML}
             <div><strong>Tax Class:</strong> ${targetProperty.taxClass}</div>
             <div><strong>Occupancy:</strong> ${targetProperty.occupancy}</div>
             <div><strong>Annual Taxes:</strong> ${formatCurrency(parseCurrency(targetProperty.taxes))}</div>
@@ -1516,25 +1570,12 @@ function sortPropertiesByColumn(properties, columnIndex, direction) {
                 aVal = a.adjustedSalePrice || 0;
                 bVal = b.adjustedSalePrice || 0;
                 break;
-            case 9: // Adjustment %
-                // Target property doesn't have this value, put it at end when sorting
-                if (a.isTarget) {
-                    aVal = direction === 'asc' ? Infinity : -Infinity;
-                } else {
-                    aVal = a.included ? calculatePropertyAdjustments(a, targetProperty).totalAdjustmentPercent : 999;
-                }
-                if (b.isTarget) {
-                    bVal = direction === 'asc' ? Infinity : -Infinity;
-                } else {
-                    bVal = b.included ? calculatePropertyAdjustments(b, targetProperty).totalAdjustmentPercent : 999;
-                }
-                break;
-            case 10: // Weight %
+            case 9: // Weight %
                 // Target property doesn't have this value, put it at end when sorting
                 aVal = a.isTarget ? (direction === 'asc' ? Infinity : -Infinity) : (a.weight || 0);
                 bVal = b.isTarget ? (direction === 'asc' ? Infinity : -Infinity) : (b.weight || 0);
                 break;
-            case 11: // Similarity
+            case 10: // Similarity
                 // Target property doesn't have this value, put it at end when sorting
                 if (a.isTarget) {
                     aVal = direction === 'asc' ? Infinity : -Infinity;
@@ -2379,6 +2420,10 @@ function calculateAndRenderEstimates() {
     const blendedLow95 = (estimateALow95 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (estimateBLow95 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
     const blendedHigh95 = (estimateAHigh95 * WEIGHTING_CONSTANTS.BLENDED_BUILDING_WEIGHT) + (estimateBHigh95 * WEIGHTING_CONSTANTS.BLENDED_LAND_WEIGHT);
 
+    // Store NYC Appraisal Method estimate globally for map tooltip access
+    window.lastNYCEstimate = nycEstimateMedian;
+    window.lastNYCPriceSQFT = medianBuildingPriceSQFT;
+
     // Calculate High Influence Properties Estimate (only if weighted method and high influence props exist)
     let highInfluenceEstimateHTML = '';
     if (weightingMethod !== 'simple' && included.length > 0) {
@@ -2508,6 +2553,27 @@ function calculateAndRenderEstimates() {
         }
     }
 
+    // Calculate list price vs estimate difference for NYC method display
+    let nycPriceDifferenceHTML = '';
+    if (targetProperty.listPrice && targetProperty.listPrice > 0 && nycEstimateMedian > 0) {
+        const priceDifference = targetProperty.listPrice - nycEstimateMedian;
+        const priceDifferencePercent = (priceDifference / nycEstimateMedian) * 100;
+        const isOverpriced = priceDifference > 0;
+        const differenceColor = isOverpriced ? '#e74c3c' : '#27ae60';
+        const differenceSign = isOverpriced ? '+' : '';
+        
+        nycPriceDifferenceHTML = `
+            <div style="margin-top: 10px; padding: 10px; background: #fff3cd; border-left: 4px solid ${differenceColor}; border-radius: 4px;">
+                <div style="font-size: 0.95em;">
+                    <strong>List Price:</strong> ${formatCurrency(targetProperty.listPrice)}
+                </div>
+                <div style="font-size: 0.9em; color: ${differenceColor}; font-weight: bold; margin-top: 4px;">
+                    ${differenceSign}${formatCurrency(priceDifference)} (${differenceSign}${priceDifferencePercent.toFixed(1)}%) ${isOverpriced ? 'above' : 'below'} estimate
+                </div>
+            </div>
+        `;
+    }
+    
     const container = document.getElementById('estimates-container');
     container.innerHTML = `
         <div class="estimate-box primary">
@@ -2518,6 +2584,8 @@ function calculateAndRenderEstimates() {
                 ${landAdj.adjustment !== 0 ? ` <span style="color: ${landAdj.adjustment >= 0 ? '#27ae60' : '#e74c3c'};">${landAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(landAdj.adjustment)}</span> lot` : ''}
                 ${widthAdj.premium !== 0 ? ` <span style="color: ${widthAdj.premium >= 0 ? '#27ae60' : '#e74c3c'};">${widthAdj.premium >= 0 ? '+' : ''}${formatCurrency(widthAdj.premium)}</span> width` : ''}
             </div>
+            
+            ${nycPriceDifferenceHTML}
             
                
                 <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 0.9em;">
@@ -2850,8 +2918,8 @@ function initializeMap() {
     map.createPane('markersPane');
     map.getPane('markersPane').style.zIndex = 450; // Always on top
 
-    // Add minimal grayscale CartoDB tiles
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    // Add medium-grey CartoDB tiles for balanced contrast
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
         attribution: '© OpenStreetMap contributors, © CARTO',
         maxZoom: 19,
         subdomains: 'abcd'
@@ -2860,22 +2928,23 @@ function initializeMap() {
     // Create layers with specific panes
     markersLayer = L.layerGroup({ pane: 'markersPane' }).addTo(map);
 
-    // Add legend (will be updated dynamically based on mode)
-    const legend = L.control({ position: 'bottomright' });
-    legend.onAdd = function () {
-        const div = L.DomUtil.create('div', 'map-legend');
-        div.id = 'map-legend-content';
-        div.innerHTML = `
-            <h4>Price Range</h4>
-            <div class="legend-item"><span class="legend-color" style="background: #4CAF50;"></span> Low</div>
-            <div class="legend-item"><span class="legend-color" style="background: #F1C40F;"></span> Medium</div>
-            <div class="legend-item"><span class="legend-color" style="background: #E74C3C;"></span> High</div>
-            <div class="legend-item"><span class="legend-color" style="background: #5372cfff;"></span> Target</div>
-            <div class="legend-item"><span class="legend-color" style="background: #eb70e9ff;"></span> Direct Comp</div>
-        `;
-        return div;
-    };
-    legend.addTo(map);
+    // Add legend to standalone container below map (not overlaying the map)
+    const legendContainer = document.getElementById('map-legend-container');
+    const legendDiv = document.createElement('div');
+    legendDiv.className = 'map-legend';
+    legendDiv.id = 'map-legend-content';
+    legendDiv.innerHTML = `
+        <h4>Price Range</h4>
+        <div class="legend-item"><span class="legend-color" style="background: #4CAF50;"></span> Low</div>
+        <div class="legend-item"><span class="legend-color" style="background: #F1C40F;"></span> Medium</div>
+        <div class="legend-item"><span class="legend-color" style="background: #E74C3C;"></span> High</div>
+        <div class="legend-item"><span class="legend-color" style="background: #5372cfff;"></span> Target</div>
+        <div class="legend-item"><span class="legend-color" style="background: #eb70e9ff;"></span> Direct Comp</div>
+    `;
+    legendContainer.appendChild(legendDiv);
+
+    // Initialize legend display
+    updateMapLegend();
 
     // Create amenities overlay data for Crown Heights
     createAmenitiesOverlay();
@@ -2928,6 +2997,16 @@ function createTooltipContent(prop, isTarget = false) {
     const badge = isTarget ? 'TARGET' : prop.isDirectComp ? 'DIRECT COMP' : '';
     const badgeSpan = badge ? `<span style="background: ${isTarget ? '#5372cfff' : '#eb70e9ff'}; color: white; padding: 2px 6px; border-radius: 3px; font-size: 9px; margin-left: 6px;">${badge}</span>` : '';
 
+    // For target property, show NYC Appraisal Method estimate instead of sale price
+    if (isTarget && window.lastNYCEstimate !== undefined) {
+        return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 12px; line-height: 1.4;">
+            <div style="font-weight: 600; margin-bottom: 4px;">${prop.address}${badgeSpan}</div>
+            <div><strong>NYC Appraisal Value:</strong> ${formatCurrency(window.lastNYCEstimate)}</div>
+            <div><strong>Building $/SQFT:</strong> ${formatCurrency(window.lastNYCPriceSQFT || 0)}</div>
+            <div><strong>Renovated:</strong> ${prop.renovated}</div>
+        </div>`;
+    }
+
     return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 12px; line-height: 1.4;">
         <div style="font-weight: 600; margin-bottom: 4px;">${prop.address}${badgeSpan}</div>
         <div><strong>Price:</strong> ${formatCurrency(prop.adjustedSalePrice || prop.salePrice || 0)}</div>
@@ -2970,6 +3049,60 @@ function createPopupContent(prop, isTarget = false) {
     html += '</div>';
     return html;
 }
+
+// Show property details in the popup container above the legend
+function showPropertyDetails(prop, isTarget = false) {
+    const popupContainer = document.getElementById('map-popup-container');
+    if (!popupContainer) return;
+
+    const badge = isTarget ? '<span class="popup-badge badge-target">TARGET</span>' :
+        prop.isDirectComp ? '<span class="popup-badge badge-direct">DIRECT COMP</span>' : '';
+
+    // Build comprehensive field list
+    const fields = [
+        { label: 'Sale Price', value: formatCurrency(prop.adjustedSalePrice || prop.salePrice || 0) },
+        { label: 'Sale Date', value: prop.sellDate || 'N/A' },
+        { label: 'Building $/SQFT', value: formatCurrency(prop.buildingPriceSQFT || 0) },
+        { label: 'Total $/SQFT', value: formatCurrency(prop.totalPriceSQFT || 0) },
+        { label: 'Property SQFT', value: formatNumber(prop.propertySQFT, 0) },
+        { label: 'Building SQFT', value: formatNumber(prop.buildingSQFT, 0) },
+        { label: 'Dimensions', value: formatBuildingDimensions(prop.buildingWidthFeet, prop.buildingDepthFeet, prop.floors).replace(/×/g, ' × ') },
+        { label: 'Renovated', value: prop.renovated },
+        { label: 'Original Details', value: prop.originalDetails || 'N/A' },
+        { label: 'Tax Class', value: prop.taxClass },
+        { label: 'Occupancy', value: prop.occupancy || 'N/A' },
+        { label: 'Distance to Transit', value: prop.distanceToKeyLocation !== undefined ? formatNumber(prop.distanceToKeyLocation, 2) + ' mi' : 'N/A' }
+    ];
+
+    let html = `<div class="popup-content" style="background: white; padding: 12px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: relative;">
+        <button onclick="closePropertyDetails()" style="position: absolute; top: 8px; right: 8px; background: none; border: none; font-size: 18px; cursor: pointer; color: #666; line-height: 1; padding: 0; width: 20px; height: 20px;">&times;</button>
+        <h4 style="margin: 0 25px 8px 0; font-size: 14px; font-weight: 600;">${prop.address}${badge}</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 12px; font-size: 12px;">`;
+
+    fields.forEach(field => {
+        html += `<div style="display: flex; gap: 6px;">
+            <span style="font-weight: 600; color: #666; white-space: nowrap;">${field.label}:</span>
+            <span style="color: #333;">${field.value}</span>
+        </div>`;
+    });
+
+    html += '</div></div>';
+    
+    popupContainer.innerHTML = html;
+    popupContainer.style.display = 'block';
+}
+
+// Close property details
+function closePropertyDetails() {
+    const popupContainer = document.getElementById('map-popup-container');
+    if (popupContainer) {
+        popupContainer.style.display = 'none';
+        popupContainer.innerHTML = '';
+    }
+}
+
+// Expose to global scope
+window.closePropertyDetails = closePropertyDetails;
 
 // Update map with markers or heatmap
 function updateMap() {
@@ -3053,7 +3186,9 @@ function updateMapMarkers() {
                 direction: 'top',
                 offset: [0, -10]
             })
-            .bindPopup(createPopupContent(targetProperty, true));
+            .on('click', function() {
+                showPropertyDetails(targetProperty, true);
+            });
 
         markersLayer.addLayer(marker);
         bounds.push([targetProperty.coordinates.lat, targetProperty.coordinates.lng]);
@@ -3091,7 +3226,9 @@ function updateMapMarkers() {
                 direction: 'top',
                 offset: [0, -10]
             })
-            .bindPopup(createPopupContent(prop, false));
+            .on('click', function() {
+                showPropertyDetails(prop, false);
+            });
 
         markersLayer.addLayer(marker);
         bounds.push([prop.coordinates.lat, prop.coordinates.lng]);
@@ -3113,7 +3250,9 @@ function updateMapMarkers() {
                 direction: 'top',
                 offset: [0, -10]
             })
-            .bindPopup(createPopupContent(prop, false));
+            .on('click', function() {
+                showPropertyDetails(prop, false);
+            });
 
         markersLayer.addLayer(marker);
         bounds.push([prop.coordinates.lat, prop.coordinates.lng]);
@@ -3125,11 +3264,11 @@ function updateMapMarkers() {
     }
 }
 
-// Update map with heatmap
+// Update map with heatmap (Weights Influence visualization)
 function updateMapHeatmap() {
-    const heatData = [];
+    const heatPoints = [];
 
-    // Calculate weights for all included properties using centralized utility function
+    // Get all included properties with valid data
     const included = comparableProperties.filter(p => p.included && p.adjustedSalePrice > 0 && p.coordinates);
 
     if (included.length === 0) return; // No data to display
@@ -3137,31 +3276,56 @@ function updateMapHeatmap() {
     // Calculate weights using centralized utility function
     const weights = calculatePropertyWeights(included, targetProperty, weightingMethod);
 
-    // Use weights as heatmap intensity - create ultra-dense grid for ultra-smooth gradient diffusion
-    included.forEach((prop, index) => {
-        const weight = weights[index] / 100; // Normalize to 0-1 for consistency with valueZonesLayer
+    // Calculate average weight to determine threshold for "high influence"
+    const avgWeight = 100 / included.length;
+    const highInfluenceThreshold = avgWeight * 1.5; // 150% of average (matches table logic)
 
-        // Create ultra-dense grid of heat points for glass-smooth gradient without any banding
-        const rings = 20;  // More rings for finer gradient steps
-        const pointsPerRing = 48;  // More points per ring for seamless circular blending
-        const maxRadius = 0.0025;  // Same coverage area
+    // Only show properties that are actually HIGH INFLUENCE (above threshold)
+    // This matches what the table shows with "High Influence" badges
+    const highInfluenceProps = included.filter((prop, index) => weights[index] >= highInfluenceThreshold);
 
-        // Add multiple center points with higher weight for solid core
-        heatData.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.8]);
-        heatData.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.8]);
-        heatData.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.8]);
-        heatData.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.75]);
-        heatData.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.75]);
+    if (highInfluenceProps.length === 0) {
+        // No high influence properties - don't show any heatmap
+        return;
+    }
 
-        // Add concentric rings with smooth exponential falloff for natural gradient
+    // Get weights only for high influence properties
+    const highInfluenceWeights = highInfluenceProps.map(prop => {
+        const index = included.indexOf(prop);
+        return weights[index];
+    });
+
+    // Normalize only the HIGH INFLUENCE weights to 0-1 range for heatmap intensity
+    const maxWeight = Math.max(...highInfluenceWeights);
+    const minWeight = Math.min(...highInfluenceWeights);
+    const weightRange = maxWeight - minWeight;
+
+    // Create focused grid ONLY for high influence properties
+    highInfluenceProps.forEach((prop) => {
+        const index = included.indexOf(prop);
+        const propWeight = weights[index];
+        
+        // Normalize weight to 0-1 range (only among high influence properties)
+        const normalizedWeight = weightRange > 0 ? (propWeight - minWeight) / weightRange : 0.5;
+
+        // Create focused grid with sharp falloff for defined value zones
+        const rings = 8;  // Fewer rings for sharper boundaries
+        const pointsPerRing = 24;  // Moderate density for clean edges
+        const maxRadius = 0.0015;  // Smaller radius for tighter concentration
+
+        // Add strong center point for solid core
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, normalizedWeight]);
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, normalizedWeight * 0.9]);
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, normalizedWeight * 0.85]);
+
+        // Add concentric rings with steep exponential falloff
         for (let ring = 1; ring <= rings; ring++) {
             const ringRadius = (maxRadius / rings) * ring;
-            // Use exponential decay for smoother, more natural falloff
-            const ringWeight = weight * Math.pow(1 - (ring / (rings + 3)), 1.5);
+            const ringWeight = normalizedWeight * Math.pow(1 - (ring / (rings + 1)), 2.5); // Steep falloff
 
             for (let i = 0; i < pointsPerRing; i++) {
                 const angle = (Math.PI * 2 * i) / pointsPerRing;
-                heatData.push([
+                heatPoints.push([
                     prop.coordinates.lat + Math.cos(angle) * ringRadius,
                     prop.coordinates.lng + Math.sin(angle) * ringRadius,
                     ringWeight
@@ -3170,33 +3334,33 @@ function updateMapHeatmap() {
         }
     });
 
-    if (heatData.length > 0) {
-        heatmapLayer = L.heatLayer(heatData, {
-            radius: 20,        // Same as valueZonesLayer for consistent diffusion
-            blur: 20,          // Same as valueZonesLayer for consistent diffusion
+    // WEIGHTS INFLUENCE HEATMAP LAYER
+    if (heatPoints.length > 0) {
+        heatmapLayer = L.heatLayer(heatPoints, {
+            radius: 20,        // Smaller radius for tighter zones
+            blur: 10,          // Less blur for sharper edges
             maxZoom: 17,
-            max: 10,           // Same as valueZonesLayer for gradual buildup
+            max: 5,            // Higher threshold to show only strong signals
             gradient: {
-                0.0: 'rgba(33, 150, 243, 0.0)',     // Deep Blue = low influence (transparent at edges)
-                0.1: 'rgba(33, 150, 243, 0.15)',    // Deep Blue (more transparent)
-                0.25: 'rgba(63, 81, 181, 0.2)',     // Indigo
-                0.4: 'rgba(103, 58, 183, 0.25)',    // Deep Purple
-                0.55: 'rgba(156, 39, 176, 0.3)',    // Purple
-                0.7: 'rgba(171, 71, 188, 0.35)',    // Medium Purple
-                0.82: 'rgba(186, 104, 200, 0.4)',   // Light Purple
-                0.9: 'rgba(233, 30, 99, 0.45)',     // Pink
-                1.0: 'rgba(233, 30, 99, 0.5)'       // Hot Pink = high influence (center, less intense)
+                0.0: 'rgba(33, 150, 243, 1)',     // Deep Blue = low influence (transparent at edges)
+                0.1: 'rgba(33, 150, 243, 1',     // Deep Blue (low influence)
+                0.25: 'rgba(41, 182, 246, 1)',    // Light Blue
+                0.4: 'rgba(255, 193, 7, 1)',      // Yellow-Orange
+                0.55: 'rgba(255, 152, 0, 1)',    // Orange
+                0.7: 'rgba(255, 87, 34, 1)',      // Deep Orange
+                0.82: 'rgba(244, 67, 54, 1)',    // Red-Orange
+                0.9: 'rgba(255, 23, 68, 1)',      // Vibrant Red
+                1.0: 'rgba(255, 0, 0, 1)'        // Pure Bright Red = high influence (maximum visibility)
             },
             minOpacity: 0,     // No minimum opacity to show full gradient
             pane: 'influencePane'  // Use custom pane for layer ordering
         });
 
-        // Patch before onAdd to intercept canvas creation at the earliest point
+        // Patch for canvas performance
         const originalCreateCanvas = heatmapLayer._initCanvas;
         if (originalCreateCanvas) {
             heatmapLayer._initCanvas = function () {
                 originalCreateCanvas.call(this);
-                // Now patch the canvas's getContext after it's created but before it's used
                 if (this._canvas) {
                     const canvas = this._canvas;
                     const originalGetContext = canvas.getContext.bind(canvas);
@@ -3274,26 +3438,47 @@ function updateMapLegend() {
     const legendContent = document.getElementById('map-legend-content');
     if (!legendContent) return;
 
+    // Marker legend that's always shown at the bottom
+    const markerLegend = `
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0;">
+            <div style="font-size: 11px; font-weight: 600; color: #666; margin-bottom: 6px;">Markers</div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <div class="legend-item"><span class="legend-color" style="background: #4CAF50;"></span> Low</div>
+                <div class="legend-item"><span class="legend-color" style="background: #F1C40F;"></span> Medium</div>
+                <div class="legend-item"><span class="legend-color" style="background: #E74C3C;"></span> High</div>
+                <div class="legend-item"><span class="legend-color" style="background: #5372cfff;"></span> Target</div>
+                <div class="legend-item"><span class="legend-color" style="background: #eb70e9ff;"></span> Direct Comp</div>
+            </div>
+        </div>
+    `;
+
     if (showHeatmap && showValueZones && showAmenitiesOverlay) {
-        // All three active - show triple-blended legend
+        // All three active - show all three legends
         const methodName = avgTypeMap[weightingMethod] || 'Simple Average';
         legendContent.innerHTML = `
             <h4>Full Blended View</h4>
-            <div style="font-size: 9px; color: #666; margin-bottom: 6px;">Values + Weights + Amenities Combined</div>
-            <div style="margin-bottom: 8px;">
-                <div style="font-size: 10px; font-weight: 600; color: #666; margin-bottom: 2px;">Property Value (Color)</div>
-                <div style="background: linear-gradient(to right, rgba(33, 150, 243, 0.5), rgba(156, 39, 176, 0.5), rgba(233, 30, 99, 0.5)); height: 10px; border-radius: 3px; margin: 3px 0;"></div>
+            <div style="font-size: 9px; color: #666; margin-bottom: 12px;">Values + Weights + Amenities Combined</div>
+            
+            <div style="margin-bottom: 12px;">
+                <div style="font-size: 10px; font-weight: 600; color: #666; margin-bottom: 4px;">Blended (Weights + Values)</div>
+                <div style="background: linear-gradient(to right, rgba(33, 150, 243, 1), rgba(255, 152, 0, 1), rgba(255, 0, 0, 1)); height: 10px; border-radius: 3px; margin: 3px 0;"></div>
                 <div style="display: flex; justify-content: space-between; font-size: 8px; color: #666;">
-                    <span>Lower Value</span>
-                    <span>Higher Value</span>
+                    <span>Lower Influence</span>
+                    <span>Higher Influence</span>
                 </div>
             </div>
-            <div style="font-size: 8px; margin-top: 6px; color: #888; line-height: 1.4;">
-                <div><strong>Hue:</strong> Blue = Cheaper, Pink = Expensive</div>
-                <div><strong>Intensity:</strong> Dim = Low weight, Bright = High weight</div>
-                <div><strong>Glow:</strong> Green tint from nearby amenities</div>
+            
+            <div style="margin-bottom: 8px;">
+                <div style="font-size: 10px; font-weight: 600; color: #666; margin-bottom: 4px;">Walkability & Amenities</div>
+                <div style="background: linear-gradient(to right, rgba(220, 50, 50, 1), rgba(255, 220, 80, 1), rgba(60, 170, 90, 1)); height: 10px; border-radius: 3px; margin: 3px 0;"></div>
+                <div style="display: flex; justify-content: space-between; font-size: 8px; color: #666;">
+                    <span>Less Walkable</span>
+                    <span>Highly Walkable</span>
+                </div>
             </div>
+            
             <p style="font-size: 8px; margin-top: 6px; color: #999; font-style: italic;">Using: ${methodName}</p>
+            ${markerLegend}
         `;
     } else if (showHeatmap && showValueZones) {
         // Both active - show combined/blended legend
@@ -3302,76 +3487,89 @@ function updateMapLegend() {
             <h4>Blended View</h4>
             <div style="font-size: 10px; color: #666; margin-bottom: 8px;">Value Zones + Weight Influence Combined</div>
             <div style="margin-bottom: 10px;">
-                <div style="font-size: 11px; font-weight: 600; color: #666; margin-bottom: 3px;">Property Value (Color)</div>
-                <div style="background: linear-gradient(to right, rgba(33, 150, 243, 0.5), rgba(156, 39, 176, 0.5), rgba(233, 30, 99, 0.5)); height: 12px; border-radius: 3px; margin: 4px 0;"></div>
+                <div style="font-size: 11px; font-weight: 600; color: #666; margin-bottom: 3px;">Property Influence (Color)</div>
+                <div style="background: linear-gradient(to right, rgba(33, 150, 243, 1), rgba(255, 152, 0, 1), rgba(255, 0, 0, 1)); height: 12px; border-radius: 3px; margin: 4px 0;"></div>
                 <div style="display: flex; justify-content: space-between; font-size: 9px; color: #666;">
-                    <span>Lower Value</span>
-                    <span>Higher Value</span>
+                    <span>Lower Influence</span>
+                    <span>Higher Influence</span>
                 </div>
             </div>
             <div style="font-size: 9px; margin-top: 8px; color: #888;">
-                <div><strong>Color:</strong> Blue = Cheaper properties, Pink = Expensive properties</div>
+                <div><strong>Color:</strong> Blue = Low influence, Red = High influence</div>
                 <div><strong>Brightness:</strong> Dim = Low weight influence, Bright = High weight influence</div>
             </div>
             <p style="font-size: 9px; margin-top: 8px; color: #999; font-style: italic;">Using: ${methodName}</p>
+            ${markerLegend}
         `;
     } else if ((showHeatmap || showValueZones) && showAmenitiesOverlay) {
-        // One data layer + amenities
+        // One data layer + amenities - show both legends
         const layerName = showHeatmap ? 'Weights Influence' : 'Value Zones';
         const methodName = avgTypeMap[weightingMethod] || 'Simple Average';
         legendContent.innerHTML = `
             <h4>${layerName} + Amenities</h4>
-            <div style="font-size: 10px; color: #666; margin-bottom: 8px;">Property data enhanced with walkability</div>
-            <div style="margin-bottom: 8px;">
-                <div style="background: linear-gradient(to right, ${showHeatmap ? '#2196F3, #9C27B0, #E91E63' : '#2196F3, #9C27B0, #E91E63'}); height: 12px; border-radius: 3px; margin: 4px 0;"></div>
+            <div style="font-size: 10px; color: #666; margin-bottom: 12px;">Property data enhanced with walkability</div>
+            
+            <div style="margin-bottom: 12px;">
+                <div style="font-size: 10px; font-weight: 600; color: #666; margin-bottom: 4px;">${layerName}</div>
+                <div style="background: linear-gradient(to right, rgba(33, 150, 243, 1), rgba(255, 152, 0, 1), rgba(255, 0, 0, 1)); height: 12px; border-radius: 3px; margin: 4px 0;"></div>
                 <div style="display: flex; justify-content: space-between; font-size: 9px; color: #666;">
                     <span>${showHeatmap ? 'Low Influence' : 'Lower Value'}</span>
                     <span>${showHeatmap ? 'High Influence' : 'Higher Value'}</span>
                 </div>
             </div>
-            <div style="font-size: 9px; margin-top: 8px; color: #888;">
-                <div>Base layer shows ${showHeatmap ? 'property influence on valuation' : 'property value distribution'}</div>
-                <div>Green glow indicates proximity to transit/amenities</div>
+            
+            <div style="margin-bottom: 8px;">
+                <div style="font-size: 10px; font-weight: 600; color: #666; margin-bottom: 4px;">Walkability & Amenities</div>
+                <div style="background: linear-gradient(to right, rgba(220, 50, 50, 1), rgba(255, 220, 80, 1), rgba(60, 170, 90, 1)); height: 12px; border-radius: 3px; margin: 4px 0;"></div>
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #666;">
+                    <span>Less Walkable</span>
+                    <span>Highly Walkable</span>
+                </div>
             </div>
+            
             <p style="font-size: 9px; margin-top: 8px; color: #999; font-style: italic;">${showHeatmap ? 'Using: ' + methodName : ''}</p>
+            ${markerLegend}
         `;
     } else if (showHeatmap) {
         // Only heatmap active
         const methodName = avgTypeMap[weightingMethod] || 'Simple Average';
         legendContent.innerHTML = `
-            <h4>Influence Heat Map</h4>
-            <p style="font-size: 11px; margin: 5px 0; color: #666;">Shows where valuation is being pulled from</p>
-            <div style="background: linear-gradient(to right, #4CAF50, #FFC107, #E74C3C); height: 20px; border-radius: 3px; margin: 8px 0;"></div>
+            <h4>Weights Influence</h4>
+            <p style="font-size: 11px; margin: 5px 0; color: #666;">Shows which properties drive the estimate</p>
+            <div style="background: linear-gradient(to right, rgba(33, 150, 243, 1), rgba(255, 152, 0, 1), rgba(255, 0, 0, 1)); height: 20px; border-radius: 3px; margin: 8px 0;"></div>
             <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666;">
                 <span>Low Influence</span>
                 <span>High Influence</span>
             </div>
-            <p style="font-size: 10px; margin-top: 8px; color: #888;">Brighter/hotter areas = properties with more weight in estimate</p>
+            <p style="font-size: 10px; margin-top: 8px; color: #888;">Red areas = properties with highest weight in estimate</p>
             <p style="font-size: 9px; margin-top: 5px; color: #999; font-style: italic;">Using: ${methodName}</p>
+            ${markerLegend}
         `;
     } else if (showValueZones) {
         // Only value zones active
         legendContent.innerHTML = `
             <h4>Value Zones</h4>
             <p style="font-size: 11px; margin: 5px 0; color: #666;">Property value concentration</p>
-            <div style="background: linear-gradient(to right, #2196F3, #9C27B0, #E91E63); height: 20px; border-radius: 3px; margin: 8px 0;"></div>
+            <div style="background: linear-gradient(to right, rgba(33, 150, 243, 1), rgba(255, 152, 0, 1), rgba(255, 0, 0, 1)); height: 20px; border-radius: 3px; margin: 8px 0;"></div>
             <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666;">
                 <span>Lower Value</span>
                 <span>Higher Value</span>
             </div>
-            <p style="font-size: 10px; margin-top: 8px; color: #888;">Pink areas = expensive properties (hot zones)</p>
+            <p style="font-size: 10px; margin-top: 8px; color: #888;">Red areas = most expensive properties</p>
+            ${markerLegend}
         `;
     } else if (showAmenitiesOverlay) {
         // Only amenities active
         legendContent.innerHTML = `
             <h4>Walkability & Amenities</h4>
             <p style="font-size: 11px; margin: 5px 0; color: #666;">Transit, dining, and parks</p>
-            <div style="background: linear-gradient(to right, rgba(220, 50, 50, 0.3), rgba(255, 220, 80, 0.3), rgba(60, 170, 90, 0.4)); height: 20px; border-radius: 3px; margin: 8px 0;"></div>
+            <div style="background: linear-gradient(to right, rgba(220, 50, 50, 1), rgba(255, 220, 80, 1), rgba(60, 170, 90, 1)); height: 20px; border-radius: 3px; margin: 8px 0;"></div>
             <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666;">
                 <span>Less Walkable</span>
                 <span>Highly Walkable</span>
             </div>
             <p style="font-size: 10px; margin-top: 8px; color: #888;">Green areas = close to subway, shops, restaurants</p>
+            ${markerLegend}
         `;
     } else {
         // Neither active - show default legend
@@ -3402,80 +3600,81 @@ function updateMapCombined() {
 
     if (included.length === 0) return; // No data to display
 
-    // Calculate weights for influence component
-    const totalPrice = included.reduce((sum, p) => sum + p.adjustedSalePrice, 0);
-    const targetSize = targetProperty.buildingSQFT;
-    const targetTotalSize = calculateTotalPropertySQFT(targetProperty.propertySQFT, targetProperty.buildingSQFT, targetProperty.buildingWidthFeet, targetProperty.buildingDepthFeet);
+    // Calculate weights using centralized utility function
+    const weights = calculatePropertyWeights(included, targetProperty, weightingMethod);
 
-    let weights = [];
+    // Calculate thresholds for HIGH INFLUENCE properties
+    const avgWeight = 100 / included.length;
+    const highInfluenceThreshold = avgWeight * 1.5; // 150% of average
 
-    if (weightingMethod === 'simple') {
-        weights = included.map(() => 100 / included.length);
-    } else if (weightingMethod === 'price') {
-        weights = included.map(p => (p.adjustedSalePrice / totalPrice) * 100);
-    } else if (weightingMethod === 'size') {
-        const sizeWeights = included.map(p => {
-            const compSize = p.buildingSQFT;
-            const sizeDiff = Math.abs(compSize - targetSize);
-            return 1 / (1 + sizeDiff / targetSize);
-        });
-        const totalSizeWeight = sizeWeights.reduce((sum, w) => sum + w, 0);
-        weights = sizeWeights.map(w => (w / totalSizeWeight) * 100);
-    } else if (weightingMethod === 'total-size') {
-        const totalSizeWeights = included.map(p => {
-            const compTotalSize = calculateTotalPropertySQFT(p.propertySQFT, p.buildingSQFT, p.buildingWidthFeet, p.buildingDepthFeet);
-            const totalSizeDiff = Math.abs(compTotalSize - targetTotalSize);
-            return 1 / (1 + totalSizeDiff / targetTotalSize);
-        });
-        const totalPropertySizeWeight = totalSizeWeights.reduce((sum, w) => sum + w, 0);
-        weights = totalSizeWeights.map(w => (w / totalPropertySizeWeight) * 100);
-    } else {
-        // For other methods, use similar logic as in renderComparables
-        weights = included.map(() => 100 / included.length);
+    // Calculate thresholds for HIGH VALUE properties
+    const prices = included.map(p => p.adjustedSalePrice);
+    const avgPrice = prices.reduce((sum, p) => sum + p, 0) / prices.length;
+    const highValueThreshold = avgPrice * 1.0; // At or above average
+
+    // Find properties that are EITHER high influence OR high value (UNION, not intersection)
+    const significantProps = included.filter((prop, index) => {
+        return weights[index] >= highInfluenceThreshold || prop.adjustedSalePrice >= highValueThreshold;
+    });
+
+    if (significantProps.length === 0) {
+        // No significant properties - don't show combined heatmap
+        return;
     }
 
-    // Calculate price normalization for value zones component
-    const prices = included.map(p => p.adjustedSalePrice);
-    const minPrice = Math.min(...prices);
-    const maxPrice = Math.max(...prices);
+    // Get data for ALL significant properties (union of both filters)
+    const significantWeights = significantProps.map(prop => {
+        const index = included.indexOf(prop);
+        return weights[index];
+    });
+
+    const significantPrices = significantProps.map(p => p.adjustedSalePrice);
+
+    // Normalize weights and prices across all significant properties
+    const maxWeight = Math.max(...significantWeights);
+    const minWeight = Math.min(...significantWeights);
+    const weightRange = maxWeight - minWeight;
+
+    const maxPrice = Math.max(...significantPrices);
+    const minPrice = Math.min(...significantPrices);
     const priceRange = maxPrice - minPrice;
 
-    // Create blended heat points where VALUE determines COLOR and WEIGHT determines INTENSITY
-    // This preserves both data types: high value = green, low value = red (zone colors)
-    // High weight = brighter/more opaque, low weight = dimmer/more transparent (influence intensity)
-    included.forEach((prop, index) => {
-        // Normalize weight (0-1) - controls INTENSITY/BRIGHTNESS
-        const normalizedWeight = weights[index] / 100;
+    // Create blended heat points for properties that pass EITHER filter
+    // TRUE ADDITIVE BLEND: Each property contributes its weight AND value components
+    significantProps.forEach((prop) => {
+        const index = included.indexOf(prop);
+        const propWeight = weights[index];
 
-        // Normalize price (0-1) - controls COLOR (hue position in gradient)
+        // Check if property passes each threshold individually
+        const isHighInfluence = propWeight >= highInfluenceThreshold;
+        const isHighValue = prop.adjustedSalePrice >= highValueThreshold;
+
+        // Normalize weight and price (0-1)
+        const normalizedWeight = weightRange > 0 ? (propWeight - minWeight) / weightRange : 0.5;
         const normalizedPrice = priceRange > 0 ? (prop.adjustedSalePrice - minPrice) / priceRange : 0.5;
 
-        // Use price as the base intensity (determines position in gradient = color)
-        // Then multiply by weight to adjust brightness (high weight = more visible)
-        // This way: expensive properties are green, cheap are red (value zones preserved)
-        // And high-influence areas are brighter, low-influence are dimmer
-        // Using linear scaling for proportional representation
-        const colorPosition = normalizedPrice; // 0 = red (cheap), 1 = green (expensive)
-        const intensityMultiplier = 0.3 + (normalizedWeight * 0.7); // Weight affects visibility (0.3-1.0 range)
-        const finalIntensity = colorPosition * intensityMultiplier;
+        // Additive blend: Add contributions from BOTH dimensions
+        // If property only passes one filter, use 50% of that dimension + 0% of the other
+        // If property passes both filters, add both contributions together
+        let weightContribution = isHighInfluence ? normalizedWeight * 0.5 : 0;
+        let priceContribution = isHighValue ? normalizedPrice * 0.5 : 0;
+        
+        const blendedValue = weightContribution + priceContribution;
 
-        // Create ultra-dense grid of heat points for glass-smooth gradient without any banding
-        const rings = 20;  // More rings for finer gradient steps
-        const pointsPerRing = 48;  // More points per ring for seamless circular blending
-        const maxRadius = 0.0025;  // Same coverage area
+        // Create focused grid with sharp falloff for defined zones
+        const rings = 8;  // Fewer rings for sharper boundaries
+        const pointsPerRing = 24;  // Moderate density for clean edges
+        const maxRadius = 0.0015;  // Smaller radius for tighter concentration
 
-        // Add multiple center points with higher weight for solid core
-        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, finalIntensity * 0.8]);
-        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, finalIntensity * 0.8]);
-        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, finalIntensity * 0.8]);
-        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, finalIntensity * 0.75]);
-        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, finalIntensity * 0.75]);
+        // Add strong center point for solid core
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, blendedValue]);
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, blendedValue * 0.95]);
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, blendedValue * 0.9]);
 
-        // Add concentric rings with smooth exponential falloff for natural gradient
+        // Add concentric rings with steep exponential falloff for sharp edges
         for (let ring = 1; ring <= rings; ring++) {
             const ringRadius = (maxRadius / rings) * ring;
-            // Use exponential decay for smoother, more natural falloff
-            const ringWeight = finalIntensity * Math.pow(1 - (ring / (rings + 3)), 1.5);
+            const ringWeight = blendedValue * Math.pow(1 - (ring / (rings + 1)), 2.5);
 
             for (let i = 0; i < pointsPerRing; i++) {
                 const angle = (Math.PI * 2 * i) / pointsPerRing;
@@ -3488,27 +3687,27 @@ function updateMapCombined() {
         }
     });
 
+    // BLEND VALUE ZONES and WEIGHTS INFLUENCE INTO SINGLE HEATMAP LAYER
     if (heatPoints.length > 0) {
         // Create blended layer where gradient represents VALUE (green=cheap → red=expensive)
         // and opacity/intensity represents WEIGHT (dim=low influence → bright=high influence)
         const combinedLayer = L.heatLayer(heatPoints, {
-            radius: 20,        // Optimized for ultra-dense point grid
-            blur: 20,          // Matched to radius for artifact-free rendering
+            radius: 15,        // Smaller radius for tighter, more defined zones
+            blur: 10,          // Less blur for sharper edges
             maxZoom: 17,
-            max: 10,           // Gradual buildup for smooth intensity transitions
+            max: 5,            // Higher threshold to show only strong signals
             gradient: {
-                // Blue-Purple-Pink gradient: blue (cheap) → purple → pink (expensive)
-                // Weight influence controls how bright/visible each color appears
-                0.0: 'rgba(33, 150, 243, 0.0)',     // Deep Blue = cheap properties (transparent at edges)
-                0.1: 'rgba(33, 150, 243, 0.2)',     // Deep Blue (low value areas, dim if low weight)
-                0.2: 'rgba(63, 81, 181, 0.25)',     // Indigo
-                0.3: 'rgba(103, 58, 183, 0.3)',     // Deep Purple
-                0.4: 'rgba(156, 39, 176, 0.35)',    // Purple (mid-value)
-                0.5: 'rgba(171, 71, 188, 0.4)',     // Medium Purple
-                0.6: 'rgba(186, 104, 200, 0.45)',   // Light Purple
-                0.7: 'rgba(233, 30, 99, 0.5)',      // Pink
-                0.85: 'rgba(240, 98, 146, 0.55)',   // Hot Pink (high value)
-                1.0: 'rgba(233, 30, 99, 0.6)'       // Hot Pink = expensive properties (brightest when high weight)
+                // Blue-Orange-Red gradient: blue (low value) → orange → red (high value)
+                // Intensity controlled by weight, color by price
+                0.0: 'rgba(33, 150, 243, 0.0)',     // Deep Blue = transparent at edges
+                0.1: 'rgba(33, 150, 243, 0.5)',     // Deep Blue (low price)
+                0.25: 'rgba(41, 182, 246, 0.6)',    // Light Blue
+                0.4: 'rgba(255, 193, 7, 0.7)',      // Yellow-Orange
+                0.55: 'rgba(255, 152, 0, 0.75)',    // Orange (mid-price)
+                0.7: 'rgba(255, 87, 34, 0.8)',      // Deep Orange
+                0.82: 'rgba(244, 67, 54, 0.85)',    // Red-Orange
+                0.9: 'rgba(255, 23, 68, 0.9)',      // Vibrant Red
+                1.0: 'rgba(255, 0, 0, 0.95)'        // Pure Bright Red = highest price (maximum visibility)
             },
             minOpacity: 0,
             pane: 'influencePane'
@@ -3537,8 +3736,8 @@ function updateMapCombined() {
         // Set canvas styling with opacity adjusted for amenities overlay
         setTimeout(() => {
             if (combinedLayer._canvas) {
-                // Increase opacity when amenities are also active for brighter three-way blend
-                combinedLayer._canvas.style.opacity = showAmenitiesOverlay ? '0.75' : '0.6';
+                // Higher opacity for better visibility of combined heatmap
+                combinedLayer._canvas.style.opacity = showAmenitiesOverlay ? '0.85' : '0.75';
             }
         }, 5);
 
@@ -3562,27 +3761,47 @@ function updateMapValueZones() {
     const maxPrice = Math.max(...prices);
     const priceRange = maxPrice - minPrice;
 
-    // Create dense grid of heat points for smooth continuous gradient (like Amenities Overlay)
-    included.forEach(prop => {
-        // Normalize price to 0-1 range
-        const normalizedIntensity = priceRange > 0 ? (prop.adjustedSalePrice - minPrice) / priceRange : 0.5;
-        // Use linear scaling for proportional representation
+    // Calculate average price to determine threshold for "high value"
+    const avgPrice = prices.reduce((sum, p) => sum + p, 0) / prices.length;
+    const highValueThreshold = avgPrice * 1.0; // Properties at or above average are "high value"
+
+    // Only show properties that are HIGH VALUE (above threshold)
+    // This focuses the visualization on expensive properties only
+    const highValueProps = included.filter(p => p.adjustedSalePrice >= highValueThreshold);
+
+    if (highValueProps.length === 0) {
+        // No high value properties - don't show any heatmap
+        return;
+    }
+
+    // Get prices only for high value properties
+    const highValuePrices = highValueProps.map(p => p.adjustedSalePrice);
+
+    // Normalize only the HIGH VALUE prices to 0-1 range for heatmap intensity
+    const maxHighPrice = Math.max(...highValuePrices);
+    const minHighPrice = Math.min(...highValuePrices);
+    const highPriceRange = maxHighPrice - minHighPrice;
+
+    // Create focused grid ONLY for high value properties
+    highValueProps.forEach(prop => {
+        // Normalize price to 0-1 range (only among high value properties)
+        const normalizedIntensity = highPriceRange > 0 ? (prop.adjustedSalePrice - minHighPrice) / highPriceRange : 0.5;
         const weight = normalizedIntensity;
 
-        // Create denser grid of heat points for smooth continuous gradient without artifacts
-        const rings = 12;  // More rings for smoother coverage
-        const pointsPerRing = 32;  // More points around each ring for seamless blending
-        const maxRadius = 0.0025;  // Larger radius for more spread
+        // Create focused grid with sharp falloff for defined value zones
+        const rings = 8;  // Fewer rings for sharper boundaries
+        const pointsPerRing = 24;  // Moderate density for clean edges
+        const maxRadius = 0.0015;  // Smaller radius for tighter concentration
 
-        // Add multiple center points with reduced weight for solid core
-        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.7]);
-        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.7]);
-        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.7]);
+        // Add strong center point for solid core
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, weight]);
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.9]);
+        heatPoints.push([prop.coordinates.lat, prop.coordinates.lng, weight * 0.85]);
 
-        // Add concentric rings with decreasing weight
+        // Add concentric rings with steep exponential falloff
         for (let ring = 1; ring <= rings; ring++) {
             const ringRadius = (maxRadius / rings) * ring;
-            const ringWeight = weight * (1 - (ring / (rings + 2))); // Gentler falloff
+            const ringWeight = weight * Math.pow(1 - (ring / (rings + 1)), 2.5); // Steep falloff
 
             for (let i = 0; i < pointsPerRing; i++) {
                 const angle = (Math.PI * 2 * i) / pointsPerRing;
@@ -3595,22 +3814,23 @@ function updateMapValueZones() {
         }
     });
 
+    // VALUE ZONES LAYER
     if (heatPoints.length > 0) {
         valueZonesLayer = L.heatLayer(heatPoints, {
-            radius: 20,       // Much larger radius for wide spread
-            blur: 20,         // Match radius to prevent artifacts while maintaining smoothness
+            radius: 20,        // Smaller radius for tighter zones
+            blur: 10,          // Less blur for sharper edges
             maxZoom: 17,
-            max: 10,           // Higher max for more gradual, gentle intensity buildup
+            max: 5,            // Higher threshold to show only strong signals
             gradient: {
-                0.0: 'rgba(33, 150, 243, 0.0)',     // Deep Blue = cheap (transparent at edges)
-                0.1: 'rgba(33, 150, 243, 0.15)',    // Deep Blue (much more transparent)
-                0.25: 'rgba(63, 81, 181, 0.2)',     // Indigo
-                0.4: 'rgba(103, 58, 183, 0.25)',    // Deep Purple
-                0.55: 'rgba(156, 39, 176, 0.3)',    // Purple
-                0.7: 'rgba(171, 71, 188, 0.35)',    // Medium Purple
-                0.82: 'rgba(186, 104, 200, 0.4)',   // Light Purple
-                0.9: 'rgba(233, 30, 99, 0.45)',     // Pink
-                1.0: 'rgba(233, 30, 99, 0.5)'       // Hot Pink = expensive (center, hot zones)
+                0.0: 'rgba(33, 150, 243, 1)',     // Deep Blue = low value (transparent at edges)
+                0.1: 'rgba(33, 150, 243, 1)',    // Deep Blue (low value areas)
+                0.25: 'rgba(41, 182, 246, 1)',    // Light Blue
+                0.4: 'rgba(255, 193, 7, 1)',      // Yellow-Orange
+                0.55: 'rgba(255, 152, 0, 1)',     // Orange
+                0.7: 'rgba(255, 87, 34, 1)',      // Deep Orange
+                0.82: 'rgba(244, 67, 54, 1)',     // Red-Orange
+                0.9: 'rgba(255, 23, 68, 1)',      // Vibrant Red
+                1.0: 'rgba(255, 0, 0, 1)'        // Pure Bright Red = high value (center, hot zones)
             },
             minOpacity: 0,     // No minimum opacity to show full gradient including center
             pane: 'valueZonesPane'  // Use custom pane for layer ordering
