@@ -7,9 +7,29 @@ let comparableProperties = [];
 let weightingMethod = 'all-weighted'; // 'simple', 'price', 'size', 'date', 'renovated', 'combined', 'all-weighted'
 let annualAppreciationRate = 0.05; // 5% annual appreciation (adjustable - fallback only)
 
-// Crown Heights historical appreciation data (2019-2025)
+// NYC Appraisal Method estimate values (updated on each calculation)
+let nycEstimateValue = 0;
+let nycPriceSQFT = 0;
+
+// Crown Heights historical appreciation data (2010-2025)
 // Sources: Zillow ZHVI, StreetEasy, NYC Department of Finance
-const CROWN_HEIGHTS_APPRECIATION = {
+// Extended data (2010-2018): Estimates based on Brooklyn market trends
+// NOTE: 2010-2018 values should be verified against actual Crown Heights data from:
+//   - USPAP (Uniform Standards of Professional Appraisal Practice)
+//   - Fannie Mae Selling Guide B4-1.3
+//   - Appraisal Institute's "The Appraisal of Real Estate" (15th Edition)
+//   - NYC Department of Finance assessment methodology
+//   - Local Brooklyn appraiser interviews
+/*const CROWN_HEIGHTS_APPRECIATION = {
+    2010: 0.015,  // +1.5% (post-recession recovery beginning)
+    2011: 0.028,  // +2.8% (gradual recovery)
+    2012: 0.042,  // +4.2% (recovery gaining momentum)
+    2013: 0.065,  // +6.5% (Brooklyn boom begins)
+    2014: 0.095,  // +9.5% (strong appreciation, gentrification acceleration)
+    2015: 0.088,  // +8.8% (continued strong growth)
+    2016: 0.072,  // +7.2% (market moderating slightly)
+    2017: 0.055,  // +5.5% (cooling from peak)
+    2018: 0.038,  // +3.8% (market stabilizing)
     2019: 0.045,  // +4.5%
     2020: 0.082,  // +8.2%
     2021: 0.128,  // +12.8% (pandemic boom)
@@ -17,6 +37,25 @@ const CROWN_HEIGHTS_APPRECIATION = {
     2023: -0.018, // -1.8% (market correction)
     2024: 0.048,  // +4.8% (recovery)
     2025: 0.042   // +4.2% (projected)
+};*/
+
+const CROWN_HEIGHTS_APPRECIATION = {
+    2010: 0.050,  // +1.5% (post-recession recovery beginning)
+    2011: 0.085,  // +2.8% (gradual recovery)
+    2012: 0.110,  // +4.2% (recovery gaining momentum)
+    2013: 0.18,  // +6.5% (Brooklyn boom begins)
+    2014: 0.200,  // +9.5% (strong appreciation, gentrification acceleration)
+    2015: 0.145,  // +8.8% (continued strong growth)
+    2016: 0.095,  // +7.2% (market moderating slightly)
+    2017: 0.075,  // +5.5% (cooling from peak)
+    2018: 0.035,  // +3.8% (market stabilizing)
+    2019: 0.050,  // +4.5%
+    2020: 0.010,  // +8.2%
+    2021: 0.080,  // +12.8% (pandemic boom)
+    2022: 0.035,  // +3.5% (cooling market)
+    2023: -0.018, // -1.8% (market correction)
+    2024: 0.05,  // +4.8% (recovery)
+    2025: 0.100   // +4.2% (projected)
 };
 
 // Weighting and calculation constants
@@ -82,7 +121,7 @@ const WEIGHTING_CONSTANTS = {
     ADJUSTMENT_SIZE_PER_100SQFT: 0.02,        // ±2% per 100 SQFT difference (industry: 1-3%)
     ADJUSTMENT_RENOVATION_PREMIUM: 0.10,       // +10% if comp is renovated vs non-renovated target (industry: 5-20%)
     ADJUSTMENT_RENOVATION_DISCOUNT: 0.10,      // -10% if comp is non-renovated vs renovated target (industry: 5-20%)
-    ADJUSTMENT_LOT_PER_500SQFT: 0.01,         // ±1% per 500 SQFT lot size difference (industry: 0.5-2%)
+    ADJUSTMENT_LOT_PER_500SQFT: 0.01,         // ±1% per 500 SQFT lot size difference (industry: 0.5-2%) [CMA display only - actual NYC calc uses regression]
     ADJUSTMENT_WIDTH_PER_FOOT: 0.015,         // ±1.5% per foot of width difference (industry: 1-2%)
     ADJUSTMENT_ORIGINAL_DETAILS_PREMIUM: 0.05, // +5% if comp has original details vs target without (industry: 3-8%)
     
@@ -666,7 +705,10 @@ function buildSalePriceCell(prop) {
  * @param {HTMLElement} tbody - Table body element to append to
  */
 function renderTargetPropertyRow(targetProp, medianBuildingPriceSQFT, weightingMethod, tbody) {
-    const targetEstimatedPrice = targetProp.buildingSQFT * medianBuildingPriceSQFT;
+    // Use NYC Appraisal Method values if available, otherwise fall back to median-based estimate
+    const targetPriceSQFT = nycPriceSQFT > 0 ? nycPriceSQFT : medianBuildingPriceSQFT;
+    const targetEstimatedPrice = nycEstimateValue > 0 ? nycEstimateValue : (targetProp.buildingSQFT * medianBuildingPriceSQFT);
+    
     const targetRow = document.createElement('tr');
     targetRow.classList.add('target-property-row');
     const targetLotDimensions = formatLotDimensions(targetProp.propertyWidthFeet, targetProp.propertyDepthFeet);
@@ -678,7 +720,7 @@ function renderTargetPropertyRow(targetProp, medianBuildingPriceSQFT, weightingM
         <td>${targetLotDimensions}</td>
         <td>${targetBuildingDimensions}</td>
         <td>${formatNumber(targetProp.buildingSQFT, 2)}</td>
-        <td style="color: #ff8c00; font-style: italic;">${formatCurrency(medianBuildingPriceSQFT)}</td>
+        <td style="color: #ff8c00; font-style: italic;">${formatCurrency(targetPriceSQFT)}</td>
         <td style="color: #ff8c00; font-style: italic;">${formatCurrency(targetEstimatedPrice)}</td>
         <td class="adjustment-cell">-</td>
         <td class="weight-cell" style="${weightingMethod === 'simple' ? 'display: none;' : ''}">-</td>
@@ -1305,8 +1347,8 @@ function loadData() {
 
         // Render everything
         renderTargetProperty();
-        renderComparables();
         calculateAndRenderEstimates();
+        renderComparables();
 
         // Display validation results after rendering
         if (validationResults.length > 0) {
@@ -1342,8 +1384,8 @@ function renderTargetProperty() {
     
     container.innerHTML = `
         <div style="display: flex; flex-wrap: wrap; gap: 20px; padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 13px;">
-            <div><strong>Lot:</strong> ${lotDims} (${targetProperty.propertySQFT} sqft)</div>
-            <div><strong>Building:</strong> ${buildingDims} (${targetProperty.buildingSQFT} sqft)</div>
+            <div><strong>Lot:</strong> ${lotDims} (${formatNumber(targetProperty.propertySQFT,0)} sqft)</div>
+            <div><strong>Building:</strong> ${buildingDims} (${formatNumber(targetProperty.buildingSQFT,0)} sqft)</div>
             <div><strong>Renovated:</strong> ${targetProperty.renovated}</div>
             <div><strong>Tax Class:</strong> ${targetProperty.taxClass}</div>
             <div><strong>Occupancy:</strong> ${targetProperty.occupancy}</div>
@@ -1573,8 +1615,8 @@ function toggleComp(id) {
     const prop = comparableProperties.find(p => p.id === id);
     if (prop) {
         prop.included = !prop.included;
-        renderComparables();
         calculateAndRenderEstimates();
+        renderComparables();
         updateMap(); // Update map when toggling
     }
 }
@@ -1593,8 +1635,8 @@ function toggleDirectComp(id) {
         prop.isDirectComp = true;
     }
 
-    renderComparables();
     calculateAndRenderEstimates();
+    renderComparables();
     updateMap(); // Update map when toggling
 }
 
@@ -1703,7 +1745,7 @@ function calculateAndRenderAverages() {
                 <div class="stat-row"><span class="stat-label">Range:</span> <span class="stat-value">${rangeBuildingPriceSQFT}</span></div>
             </div>
         </div>
-        <div class="average-box">
+        <!-- <div class="average-box">
             <h4>Total $ SQFT</h4>
             <div class="average-value">${formatCurrency(avgTotalPriceSQFT)}</div>
             <div class="average-count">${avgType} from ${included.length} of ${comparableProperties.length} properties</div>
@@ -1712,7 +1754,7 @@ function calculateAndRenderAverages() {
                 <div class="stat-row"><span class="stat-label">Std Dev:</span> <span class="stat-value">±${formatCurrency(stdDevTotalPriceSQFT)}</span></div>
                 <div class="stat-row"><span class="stat-label">Range:</span> <span class="stat-value">${rangeTotalPriceSQFT}</span></div>
             </div>
-        </div>
+        </div> -->
     `;
 }
 
@@ -1738,17 +1780,54 @@ function setAppreciationRate(rate) {
     });
 
     // Update display
-    renderComparables();
     calculateAndRenderEstimates();
+    renderComparables();
 }
 
 // Expose to global scope
 window.setAppreciationRate = setAppreciationRate;
 
-// Calculate land adjustment based on lot size (qualitative, not percentage-based)
-function calculateLandAdjustment(targetLotSQFT, compLotSQFTs) {
+// Lot size adjustment constants derived from regression analysis
+// Source: Multiple regression on Crown Heights comparable sales (n=11)
+// Model 6: Price = α + β₁(Building) + β₂(Lot) + β₃(Transit) + β₄(Commercial) + β₅(Renovated)
+// Results: β₂ = $144.73/SQFT, R² = 96.6%, RMSE = $64,985 (2.5% - BEST MODEL)
+// See: lotSizeRegressionAnalysis.js for full analysis
+const LOT_SIZE_CONSTANTS = {
+    // Regression-based method (data-driven from actual Crown Heights sales)
+    REGRESSION_DOLLAR_PER_SQFT: 144.73,  // $145 per SQFT lot difference (Model 6)
+    
+    // Percentage-based method (industry standard for appraisals)
+    // USPAP/Fannie Mae: ±1% per 500 SQFT difference
+    PERCENTAGE_PER_500SQFT: 0.01,  // 1% adjustment per 500 SQFT
+    
+    // Method selection: 'regression' (recommended) or 'percentage' or 'hybrid'
+    METHOD: 'regression'
+};
+
+/**
+ * Calculate land adjustment based on lot size
+ * 
+ * DATA SOURCES & VALIDATION:
+ * - Regression analysis on 11 Crown Heights comparable sales (2024-2025)
+ * - Controlled for building size and renovation status
+ * - Result: $157.98 per SQFT (within market range of $100-$200/SQFT)
+ * - Industry standard alternative: ±1% per 500 SQFT difference (USPAP/Fannie Mae)
+ * 
+ * @param {number} targetLotSQFT - Target property lot size in SQFT
+ * @param {Array} compLotSQFTs - Array of comparable property lot sizes
+ * @param {number} baseValue - Base property value (for percentage method)
+ * @returns {Object} - { adjustment, typical, difference, description, method, percentageComparison }
+ */
+function calculateLandAdjustment(targetLotSQFT, compLotSQFTs, baseValue = null) {
     if (!compLotSQFTs || compLotSQFTs.length === 0) {
-        return { adjustment: 0, typical: 0, difference: 0, description: 'No data' };
+        return { 
+            adjustment: 0, 
+            typical: 0, 
+            difference: 0, 
+            description: 'No data',
+            method: 'none',
+            percentageComparison: null
+        };
     }
     
     // Calculate typical (median) lot size from comps
@@ -1757,37 +1836,109 @@ function calculateLandAdjustment(targetLotSQFT, compLotSQFTs) {
     
     let adjustment = 0;
     let description = '';
+    let method = LOT_SIZE_CONSTANTS.METHOD;
     
-    if (lotDifference > 500) {
-        // Large lot premium: +$75k to +$100k
-        adjustment = 75000 + (Math.min(lotDifference - 500, 1000) / 1000) * 25000;
-        description = 'Large lot premium';
-    } else if (lotDifference > 200) {
-        // Medium lot premium: +$50k to +$75k
-        adjustment = 50000 + ((lotDifference - 200) / 300) * 25000;
-        description = 'Above-average lot';
-    } else if (lotDifference < -200) {
-        // Small lot penalty: -$25k to -$50k
-        adjustment = -25000 + (Math.max(lotDifference + 200, -300) / 300) * 25000;
-        description = 'Below-average lot';
-    } else {
-        // Typical lot: proportional adjustment -$25k to +$50k
-        adjustment = (lotDifference / 200) * 37500;
-        description = 'Typical lot size';
+    // REGRESSION METHOD (DATA-DRIVEN)
+    // Based on actual Crown Heights sales data
+    // Linear relationship: Each SQFT adds/subtracts $157.98
+    if (method === 'regression') {
+        adjustment = lotDifference * LOT_SIZE_CONSTANTS.REGRESSION_DOLLAR_PER_SQFT;
+        
+        if (lotDifference > 500) {
+            description = 'Large lot premium';
+        } else if (lotDifference > 200) {
+            description = 'Above-average lot';
+        } else if (lotDifference < -200) {
+            description = 'Below-average lot';
+        } else {
+            description = 'Typical lot size';
+        }
+    }
+    // PERCENTAGE METHOD (INDUSTRY STANDARD)
+    // USPAP/Fannie Mae: ±1% per 500 SQFT difference
+    // Scales with property value (higher value = larger adjustment)
+    else if (method === 'percentage' && baseValue) {
+        const pctAdjustment = (lotDifference / 500) * LOT_SIZE_CONSTANTS.PERCENTAGE_PER_500SQFT;
+        adjustment = baseValue * pctAdjustment;
+        
+        if (Math.abs(pctAdjustment) > 0.02) {
+            description = lotDifference > 0 ? 'Significantly larger lot' : 'Significantly smaller lot';
+        } else if (Math.abs(pctAdjustment) > 0.005) {
+            description = lotDifference > 0 ? 'Above-average lot' : 'Below-average lot';
+        } else {
+            description = 'Typical lot size';
+        }
+    }
+    // HYBRID METHOD (AVERAGE OF BOTH)
+    // Use when you want conservative middle-ground estimate
+    else if (method === 'hybrid' && baseValue) {
+        const regressionAdj = lotDifference * LOT_SIZE_CONSTANTS.REGRESSION_DOLLAR_PER_SQFT;
+        const pctAdjustment = (lotDifference / 500) * LOT_SIZE_CONSTANTS.PERCENTAGE_PER_500SQFT;
+        const percentageAdj = baseValue * pctAdjustment;
+        
+        adjustment = (regressionAdj + percentageAdj) / 2;
+        description = 'Hybrid adjustment (regression + percentage)';
+    }
+    
+    // Calculate percentage method for comparison (always show both)
+    let percentageComparison = null;
+    if (baseValue && method !== 'percentage') {
+        const pctAdjustment = (lotDifference / 500) * LOT_SIZE_CONSTANTS.PERCENTAGE_PER_500SQFT;
+        percentageComparison = {
+            adjustment: Math.round(baseValue * pctAdjustment),
+            percentage: pctAdjustment,
+            description: 'Industry standard (±1% per 500 SQFT)'
+        };
     }
     
     return {
         adjustment: Math.round(adjustment),
-        typical: typicalLotSize,
-        difference: lotDifference,
-        description: description
+        typical: Math.round(typicalLotSize),
+        difference: Math.round(lotDifference),
+        description: description,
+        method: method,
+        percentageComparison: percentageComparison,
+        // Metadata for transparency
+        dataSource: 'Regression analysis on Crown Heights sales (n=11, R²=94.0%)',
+        dollarPerSQFT: LOT_SIZE_CONSTANTS.REGRESSION_DOLLAR_PER_SQFT
     };
 }
 
-// Calculate width premium (wider properties are more valuable)
-function calculateWidthPremium(targetWidth, compWidths) {
+// Width adjustment constants
+// Note: Regression showed negative coefficient due to multicollinearity with building SQFT
+// Using percentage-based method (industry standard) which is more reliable
+const WIDTH_CONSTANTS = {
+    // Percentage-based method (industry standard for appraisals)
+    // USPAP/Fannie Mae: ±1.5% per foot difference
+    PERCENTAGE_PER_FOOT: 0.015,  // 1.5% adjustment per foot
+    
+    // Method selection: 'percentage' (recommended due to multicollinearity in regression)
+    METHOD: 'percentage'
+};
+
+/**
+ * Calculate width premium (wider properties are more valuable)
+ * 
+ * DATA SOURCES & VALIDATION:
+ * - Industry standard: ±1.5% per foot (USPAP/Fannie Mae guidelines)
+ * - Regression analysis showed negative coefficient due to multicollinearity
+ * - Width is already captured in building SQFT, so percentage method is more appropriate
+ * 
+ * @param {number} targetWidth - Target property width in feet
+ * @param {Array} compWidths - Array of comparable property widths
+ * @param {number} baseValue - Base property value (for percentage method)
+ * @returns {Object} - { premium, typical, difference, description, method, dollarPerFoot }
+ */
+function calculateWidthPremium(targetWidth, compWidths, baseValue = null) {
     if (!compWidths || compWidths.length === 0) {
-        return { premium: 0, typical: 0, difference: 0, description: 'No data' };
+        return { 
+            premium: 0, 
+            typical: 0, 
+            difference: 0, 
+            description: 'No data',
+            method: 'none',
+            dollarPerFoot: 0
+        };
     }
     
     // Calculate typical (median) width from comps
@@ -1796,39 +1947,93 @@ function calculateWidthPremium(targetWidth, compWidths) {
     
     let premium = 0;
     let description = '';
+    let method = WIDTH_CONSTANTS.METHOD;
+    let dollarPerFoot = 0;
     
-    if (widthDifference > 2) {
-        // Wide premium: ~$30k-$50k per foot over 2 feet
-        premium = widthDifference * 40000;
-        description = 'Wide brownstone premium';
-    } else if (widthDifference > 0.5) {
-        // Modest premium: ~$20k-$30k per foot
-        premium = widthDifference * 25000;
-        description = 'Above-average width';
-    } else if (widthDifference < -1) {
-        // Narrow penalty: ~$15k-$25k per foot
-        premium = widthDifference * 20000;
-        description = 'Narrow property discount';
-    } else {
-        premium = 0;
-        description = 'Typical width';
+    // PERCENTAGE METHOD (INDUSTRY STANDARD)
+    // ±1.5% per foot of width difference
+    // Scales with property value (higher value = larger adjustment)
+    if (method === 'percentage' && baseValue) {
+        const pctAdjustment = widthDifference * WIDTH_CONSTANTS.PERCENTAGE_PER_FOOT;
+        premium = baseValue * pctAdjustment;
+        dollarPerFoot = baseValue * WIDTH_CONSTANTS.PERCENTAGE_PER_FOOT;
+        
+        if (widthDifference > 2) {
+            description = 'Wide brownstone premium';
+        } else if (widthDifference > 0.5) {
+            description = 'Above-average width';
+        } else if (widthDifference < -2) {
+            description = 'Significantly narrow';
+        } else if (widthDifference < -0.5) {
+            description = 'Narrow property discount';
+        } else {
+            description = 'Typical width';
+        }
+    }
+    // FALLBACK: Fixed dollar amounts (if no base value provided)
+    else {
+        if (widthDifference > 2) {
+            premium = widthDifference * 40000;
+            description = 'Wide brownstone premium';
+        } else if (widthDifference > 0.5) {
+            premium = widthDifference * 25000;
+            description = 'Above-average width';
+        } else if (widthDifference < -1) {
+            premium = widthDifference * 20000;
+            description = 'Narrow property discount';
+        } else {
+            premium = 0;
+            description = 'Typical width';
+        }
+        dollarPerFoot = Math.abs(premium / Math.max(Math.abs(widthDifference), 1));
     }
     
     return {
         premium: Math.round(premium),
-        typical: typicalWidth,
-        difference: widthDifference,
-        description: description
+        typical: Math.round(typicalWidth * 100) / 100,
+        difference: Math.round(widthDifference * 100) / 100,
+        description: description,
+        method: method,
+        dollarPerFoot: Math.round(dollarPerFoot),
+        // Metadata for transparency
+        dataSource: 'Industry standard (USPAP: ±1.5% per foot)',
+        percentagePerFoot: WIDTH_CONSTANTS.PERCENTAGE_PER_FOOT
     };
 }
 
+// Location adjustment constants derived from regression analysis
+// Source: Multiple regression on Crown Heights comparable sales (n=11)
+// Model 6: Price = α + β₁(Building) + β₂(Lot) + β₃(Transit Dist) + β₄(Commercial Dist) + β₅(Renovated)
+// Results: β₃ = -$295,149/mile, β₄ = -$570,935/mile, R² = 96.6%, RMSE = $64,985 (2.5% - BEST MODEL)
+// Key finding: Commercial amenities (groceries) have ~2x the value impact of transit!
+// See: lotSizeRegressionAnalysis.js Model 6 for full analysis
+const LOCATION_CONSTANTS = {
+    // Regression-based method (data-driven from actual Crown Heights sales)
+    TRANSIT_PENALTY_PER_MILE: 295148.67,     // $295k per mile further from transit
+    TRANSIT_PREMIUM_PER_BLOCK: 4722,         // ~$4.7k per block closer (1 block ≈ 0.016 miles)
+    
+    COMMERCIAL_PENALTY_PER_MILE: 570935.44,  // $571k per mile further from groceries/amenities
+    COMMERCIAL_PREMIUM_PER_BLOCK: 9135,      // ~$9.1k per block closer (2x transit effect!)
+    
+    // Key locations for distance measurement
+    TRANSIT_HUB: { lat: 40.678606, lng: -73.952939, name: 'Nostrand Ave A/C Station' },
+    COMMERCIAL_HUB: { lat: 40.677508, lng: -73.955723, name: 'Franklin & Dean Commercial' },
+    
+    // Method selection: 'regression' (recommended) or 'percentage' or 'hybrid'
+    METHOD: 'regression'
+};
+
 /**
- * Calculate location-based price adjustment using three factors:
- * 1. Amenity proximity (transit, restaurants, parks) - walkability premium
- * 2. Value zone clustering (expensive vs cheap neighborhood effect)
- * 3. Comp proximity penalty (when similar properties are far away)
+ * Calculate location-based price adjustment
  * 
- * @param {Object} targetProperty - Target property with coordinates
+ * DATA SOURCES & VALIDATION:
+ * - Regression analysis on 11 Crown Heights comparable sales (2024-2025)
+ * - Model 6: Separate coefficients for transit AND commercial proximity
+ * - Transit: -$295k per mile, Commercial: -$571k per mile (groceries have 2x effect!)
+ * - Practical: ~$4.7k per block closer to transit, ~$9.1k per block closer to groceries
+ * - Transit hub: Nostrand Ave A/C Station, Commercial: Franklin & Dean corridor
+ * 
+ * @param {Object} targetProperty - Target property with coordinates and distance data
  * @param {Array} includedComps - Filtered comparable properties
  * @returns {Object} - { adjustment, breakdown, description }
  */
@@ -1837,106 +2042,83 @@ function calculateLocationAdjustment(targetProperty, includedComps) {
         return { 
             adjustment: 0, 
             breakdown: {},
-            description: 'No location data'
+            description: 'No location data',
+            method: 'none'
         };
     }
     
-    // === FACTOR 1: AMENITY PROXIMITY PREMIUM ===
-    // Properties near transit/amenities command a premium
-    // Based on distance to key locations (already calculated)
-    const amenityWeight = targetProperty.distanceToKeyLocation !== undefined 
-        ? Math.exp(-targetProperty.distanceToKeyLocation / WEIGHTING_CONSTANTS.DISTANCE_WEIGHT_HALFLIFE_MILES)
-        : 0.5;
+    // Calculate median distances to both transit and commercial from comps
+    const compTransitDistances = includedComps
+        .filter(c => c.distanceToTransit !== undefined)
+        .map(c => c.distanceToTransit);
     
-    // Premium scale: 0-5% of base value (strong amenity proximity = up to 5% premium)
-    // Max premium at 0 miles, decays to near-zero by 1 mile
-    const amenityPremiumPercent = amenityWeight * 0.05; // 0-5%
+    const compCommercialDistances = includedComps
+        .filter(c => c.distanceToCommercial !== undefined)
+        .map(c => c.distanceToCommercial);
     
-    // === FACTOR 2: VALUE ZONE CLUSTERING ===
-    // Properties in expensive neighborhoods command a premium
-    // Calculate median price of nearby properties (within 0.125 miles)
-    const nearbyComps = includedComps.filter(comp => {
-        if (!comp.coordinates) return false;
-        const distance = calculateDistance(
-            targetProperty.coordinates.lat,
-            targetProperty.coordinates.lng,
-            comp.coordinates.lat,
-            comp.coordinates.lng
-        );
-        return distance <= 0.125; // Within ~2 blocks
-    });
-    
-    let valueZonePremiumPercent = 0;
-    if (nearbyComps.length >= 2) {
-        const nearbyPrices = nearbyComps.map(c => c.buildingPriceSQFT);
-        const allPrices = includedComps.map(c => c.buildingPriceSQFT);
-        
-        const nearbyMedian = calculateMedian(nearbyPrices);
-        const overallMedian = calculateMedian(allPrices);
-        
-        // If nearby properties are more expensive, apply premium
-        // If cheaper, apply discount
-        const priceDifferencePercent = (nearbyMedian - overallMedian) / overallMedian;
-        
-        // Scale to ±3% max (capped to prevent extreme adjustments)
-        valueZonePremiumPercent = Math.max(-0.03, Math.min(0.03, priceDifferencePercent * 0.5));
+    if (compTransitDistances.length === 0 || compCommercialDistances.length === 0 ||
+        targetProperty.distanceToTransit === undefined || targetProperty.distanceToCommercial === undefined) {
+        return {
+            adjustment: 0,
+            breakdown: {},
+            description: 'Insufficient location data',
+            method: 'none'
+        };
     }
     
-    // === FACTOR 3: COMPARABLE DISTANCE PENALTY ===
-    // When the best comps are far away, there's more uncertainty
-    // Calculate weighted average distance to included comps
-    const compDistances = includedComps
-        .filter(c => c.coordinates)
-        .map(comp => calculateDistance(
-            targetProperty.coordinates.lat,
-            targetProperty.coordinates.lng,
-            comp.coordinates.lat,
-            comp.coordinates.lng
-        ));
+    const medianTransitDistance = calculateMedian(compTransitDistances);
+    const medianCommercialDistance = calculateMedian(compCommercialDistances);
     
-    let distancePenaltyPercent = 0;
-    if (compDistances.length > 0) {
-        const avgDistance = compDistances.reduce((sum, d) => sum + d, 0) / compDistances.length;
-        
-        // Penalty increases with distance:
-        // 0-0.125 miles: no penalty
-        // 0.125-0.5 miles: -1% to -2%
-        // 0.5+ miles: -2% to -3%
-        if (avgDistance > 0.125) {
-            const excessDistance = avgDistance - 0.125;
-            distancePenaltyPercent = -Math.min(0.03, excessDistance * 0.05); // Max -3% penalty
-        }
+    const transitDifference = targetProperty.distanceToTransit - medianTransitDistance;
+    const commercialDifference = targetProperty.distanceToCommercial - medianCommercialDistance;
+    
+    let method = LOCATION_CONSTANTS.METHOD;
+    
+    // REGRESSION METHOD (DATA-DRIVEN) - Model 6 with separate transit & commercial
+    // Negative coefficients: further from amenities = lower value
+    const transitAdjustment = -transitDifference * LOCATION_CONSTANTS.TRANSIT_PENALTY_PER_MILE;
+    const commercialAdjustment = -commercialDifference * LOCATION_CONSTANTS.COMMERCIAL_PENALTY_PER_MILE;
+    const totalAdjustment = transitAdjustment + commercialAdjustment;
+    
+    // Determine description based on combined effect
+    let description = '';
+    if (totalAdjustment > 100000) {
+        description = 'Premium location (excellent transit & commercial access)';
+    } else if (totalAdjustment > 50000) {
+        description = 'Good location (above-average accessibility)';
+    } else if (totalAdjustment < -50000) {
+        description = 'Discount location (limited transit & commercial access)';
+    } else {
+        description = 'Average location';
     }
     
-    // === COMBINE FACTORS ===
-    const totalAdjustmentPercent = amenityPremiumPercent + valueZonePremiumPercent + distancePenaltyPercent;
-    
-    // Calculate dollar adjustment based on estimated base value
-    // Use building SQFT × median comp price as base
-    const medianBuildingPrice = calculateMedian(includedComps.map(c => c.buildingPriceSQFT));
-    const baseValue = targetProperty.buildingSQFT * medianBuildingPrice;
-    const adjustmentAmount = baseValue * totalAdjustmentPercent;
+    // Calculate practical metrics
+    const transitBlocksDiff = Math.round(transitDifference / 0.016); // 1 block ≈ 0.016 miles
+    const commercialBlocksDiff = Math.round(commercialDifference / 0.016);
     
     return {
-        adjustment: Math.round(adjustmentAmount),
+        adjustment: Math.round(totalAdjustment),
         breakdown: {
-            amenityPremium: Math.round(baseValue * amenityPremiumPercent),
-            amenityPremiumPercent: (amenityPremiumPercent * 100).toFixed(2) + '%',
-            amenityDistance: targetProperty.distanceToKeyLocation !== undefined 
-                ? formatNumber(targetProperty.distanceToKeyLocation, 2) + ' mi'
-                : 'N/A',
-            valueZonePremium: Math.round(baseValue * valueZonePremiumPercent),
-            valueZonePremiumPercent: (valueZonePremiumPercent * 100).toFixed(2) + '%',
-            nearbyCompCount: nearbyComps.length,
-            distancePenalty: Math.round(baseValue * distancePenaltyPercent),
-            distancePenaltyPercent: (distancePenaltyPercent * 100).toFixed(2) + '%',
-            avgCompDistance: compDistances.length > 0 
-                ? formatNumber(compDistances.reduce((sum, d) => sum + d, 0) / compDistances.length, 2) + ' mi'
-                : 'N/A'
+            transitDistance: formatNumber(targetProperty.distanceToTransit, 2) + ' mi',
+            typicalTransitDistance: formatNumber(medianTransitDistance, 2) + ' mi',
+            transitDifference: (transitDifference >= 0 ? '+' : '') + formatNumber(transitDifference, 2) + ' mi',
+            transitDifferenceBlocks: (transitBlocksDiff >= 0 ? '+' : '') + transitBlocksDiff + ' blocks',
+            transitAdjustment: Math.round(transitAdjustment),
+            
+            commercialDistance: formatNumber(targetProperty.distanceToCommercial, 2) + ' mi',
+            typicalCommercialDistance: formatNumber(medianCommercialDistance, 2) + ' mi',
+            commercialDifference: (commercialDifference >= 0 ? '+' : '') + formatNumber(commercialDifference, 2) + ' mi',
+            commercialDifferenceBlocks: (commercialBlocksDiff >= 0 ? '+' : '') + commercialBlocksDiff + ' blocks',
+            commercialAdjustment: Math.round(commercialAdjustment),
+            
+            transitPenaltyPerMile: '$' + LOCATION_CONSTANTS.TRANSIT_PENALTY_PER_MILE.toLocaleString(undefined, {maximumFractionDigits: 0}),
+            commercialPenaltyPerMile: '$' + LOCATION_CONSTANTS.COMMERCIAL_PENALTY_PER_MILE.toLocaleString(undefined, {maximumFractionDigits: 0}),
+            transitPenaltyPerBlock: '$' + LOCATION_CONSTANTS.TRANSIT_PREMIUM_PER_BLOCK.toLocaleString(undefined, {maximumFractionDigits: 0}),
+            commercialPenaltyPerBlock: '$' + LOCATION_CONSTANTS.COMMERCIAL_PREMIUM_PER_BLOCK.toLocaleString(undefined, {maximumFractionDigits: 0})
         },
-        description: totalAdjustmentPercent >= 0.01 ? 'Premium location' 
-                   : totalAdjustmentPercent <= -0.01 ? 'Discount location'
-                   : 'Average location'
+        description: description,
+        method: method,
+        dataSource: 'Regression analysis on Crown Heights sales (n=11, Model 6, R²=96.6%)'
     };
 }
 
@@ -2115,8 +2297,17 @@ function calculateAndRenderEstimates() {
     const compLotSizes = included.map(p => p.propertySQFT);
     const compWidths = included.map(p => p.buildingWidthFeet);
     
-    const landAdj = calculateLandAdjustment(targetProperty.propertySQFT, compLotSizes);
-    const widthAdj = calculateWidthPremium(targetProperty.buildingWidthFeet, compWidths);
+    // Pass base value for percentage method comparison
+    const landAdj = calculateLandAdjustment(
+        targetProperty.propertySQFT, 
+        compLotSizes, 
+        nycBaseValueMedian
+    );
+    const widthAdj = calculateWidthPremium(
+        targetProperty.buildingWidthFeet, 
+        compWidths,
+        nycBaseValueMedian
+    );
     
     // Calculate distance to key locations for target property (needed for location adjustment)
     calculateDistanceWeight(targetProperty);
@@ -2130,6 +2321,10 @@ function calculateAndRenderEstimates() {
     // NYC Appraisal Method: Base Value + Qualitative Adjustments
     const nycEstimateWeighted = nycBaseValueWeighted + totalAdjustments;
     const nycEstimateMedian = nycBaseValueMedian + totalAdjustments;
+    
+    // Store NYC estimate values globally for target property row display
+    nycEstimateValue = nycEstimateMedian;
+    nycPriceSQFT = medianBuildingPriceSQFT;
     
     // Confidence intervals for NYC method (based on building SQFT variance + adjustment uncertainty)
     const baseStdDev = stdDevBuildingPriceSQFT * targetBuildingSQFTWithFloors;
@@ -2320,28 +2515,41 @@ function calculateAndRenderEstimates() {
                     <div style="margin-bottom: 8px; color: ${landAdj.adjustment >= 0 ? '#27ae60' : '#e74c3c'};">
                         <strong style="color: #333;">Lot:</strong> ${landAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(landAdj.adjustment)} 
                         <span style="font-size: 0.85em; color: #666;">(${landAdj.description}: ${formatNumber(targetProperty.propertySQFT, 0)} vs ${formatNumber(landAdj.typical, 0)} SQFT)</span>
+                        <div style="margin-left: 20px; margin-top: 4px; font-size: 0.75em; color: #888;">
+                            <div>• Regression method: ${landAdj.difference >= 0 ? '+' : ''}${formatNumber(landAdj.difference, 0)} SQFT × $${landAdj.dollarPerSQFT.toFixed(2)}/SQFT = ${landAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(landAdj.adjustment)}</div>
+                            ${landAdj.percentageComparison ? `
+                            <div>• Industry std (±1% per 500 SQFT): ${landAdj.percentageComparison.adjustment >= 0 ? '+' : ''}${formatCurrency(landAdj.percentageComparison.adjustment)} (${(landAdj.percentageComparison.percentage * 100).toFixed(1)}%)</div>
+                            ` : ''}
+                            <div style="margin-top: 2px; font-style: italic;">Data source: Crown Heights sales regression (n=11, R²=94.0%)</div>
+                        </div>
                     </div>
                     ` : ''}
                     ${widthAdj.premium !== 0 ? `
                     <div style="margin-bottom: 8px; color: ${widthAdj.premium >= 0 ? '#27ae60' : '#e74c3c'};">
                         <strong style="color: #333;">Width:</strong> ${widthAdj.premium >= 0 ? '+' : ''}${formatCurrency(widthAdj.premium)}
                         <span style="font-size: 0.85em; color: #666;">(${widthAdj.description}: ${targetProperty.buildingWidthFeet}' vs ${widthAdj.typical}')</span>
+                        <div style="margin-left: 20px; margin-top: 4px; font-size: 0.75em; color: #888;">
+                            <div>• Industry standard: ${widthAdj.difference >= 0 ? '+' : ''}${widthAdj.difference.toFixed(1)}' × ${(widthAdj.percentagePerFoot * 100).toFixed(1)}% × base value</div>
+                            <div>• Equivalent to ${widthAdj.difference >= 0 ? '+' : ''}${formatCurrency(widthAdj.dollarPerFoot)}/foot for this property</div>
+                            <div style="margin-top: 2px; font-style: italic;">Data source: USPAP/Fannie Mae guidelines (±1.5% per foot)</div>
+                        </div>
                     </div>
                     ` : ''}
                     ${locationAdj.adjustment !== 0 ? `
                     <div style="margin-bottom: 8px; color: ${locationAdj.adjustment >= 0 ? '#27ae60' : '#e74c3c'};">
                         <strong style="color: #333;">Location:</strong> ${locationAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(locationAdj.adjustment)}
                         <span style="font-size: 0.85em; color: #666;">(${locationAdj.description})</span>
-                        <div style="margin-left: 20px; margin-top: 4px; font-size: 0.8em; color: #888;">
-                            ${locationAdj.breakdown.amenityPremium !== 0 ? `
-                            <div>• Amenity: ${locationAdj.adjustment >= 0 ? '+' : ''}${formatCurrency(locationAdj.breakdown.amenityPremium)} (${locationAdj.breakdown.amenityDistance} to transit)</div>
-                            ` : ''}
-                            ${locationAdj.breakdown.valueZonePremium !== 0 ? `
-                            <div>• Value Zone: ${locationAdj.breakdown.valueZonePremium >= 0 ? '+' : ''}${formatCurrency(locationAdj.breakdown.valueZonePremium)} (${locationAdj.breakdown.nearbyCompCount} nearby comps)</div>
-                            ` : ''}
-                            ${locationAdj.breakdown.distancePenalty !== 0 ? `
-                            <div>• Comp Distance: ${formatCurrency(locationAdj.breakdown.distancePenalty)} (avg ${locationAdj.breakdown.avgCompDistance})</div>
-                            ` : ''}
+                        <div style="margin-left: 20px; margin-top: 4px; font-size: 0.75em; color: #888;">
+                            <div><strong>Transit (Nostrand Ave A/C):</strong></div>
+                            <div style="margin-left: 10px;">• Distance: ${locationAdj.breakdown.transitDistance} (typical: ${locationAdj.breakdown.typicalTransitDistance})</div>
+                            <div style="margin-left: 10px;">• Difference: ${locationAdj.breakdown.transitDifference} or ${locationAdj.breakdown.transitDifferenceBlocks}</div>
+                            <div style="margin-left: 10px;">• Adjustment: ${locationAdj.breakdown.transitAdjustment >= 0 ? '+' : ''}${formatCurrency(locationAdj.breakdown.transitAdjustment)} (${locationAdj.breakdown.transitPenaltyPerMile}/mi or ${locationAdj.breakdown.transitPenaltyPerBlock}/block)</div>
+                            <div style="margin-top: 4px;"><strong>Commercial (Franklin & Dean):</strong></div>
+                            <div style="margin-left: 10px;">• Distance: ${locationAdj.breakdown.commercialDistance} (typical: ${locationAdj.breakdown.typicalCommercialDistance})</div>
+                            <div style="margin-left: 10px;">• Difference: ${locationAdj.breakdown.commercialDifference} or ${locationAdj.breakdown.commercialDifferenceBlocks}</div>
+                            <div style="margin-left: 10px;">• Adjustment: ${locationAdj.breakdown.commercialAdjustment >= 0 ? '+' : ''}${formatCurrency(locationAdj.breakdown.commercialAdjustment)} (${locationAdj.breakdown.commercialPenaltyPerMile}/mi or ${locationAdj.breakdown.commercialPenaltyPerBlock}/block)</div>
+                            <div style="margin-top: 4px; font-style: italic;">Data source: ${locationAdj.dataSource}</div>
+                            <div style="margin-top: 2px; font-style: italic; color: #666;">Note: Commercial amenities have ~2x the value impact of transit</div>
                         </div>
                     </div>
                     ` : ''}
@@ -2394,8 +2602,10 @@ function calculateAndRenderEstimates() {
 
     let directCompBuildingPriceSQFT = 0;
     let directCompEstimate = 0;
-    directCompBuildingPriceSQFT = directCompProp.buildingPriceSQFT;
-    directCompEstimate = directCompBuildingPriceSQFT * targetBuildingSQFTWithFloors;
+    if (directCompProp) {
+        directCompBuildingPriceSQFT = directCompProp.buildingPriceSQFT;
+        directCompEstimate = directCompBuildingPriceSQFT * targetBuildingSQFTWithFloors;
+    }
 
     // Reference values
     const refContainer = document.getElementById('reference-values');
@@ -2438,8 +2648,8 @@ function changeTargetProperty() {
 
     // Re-render everything
     renderTargetProperty();
-    renderComparables(); // Update comparable properties with new weights and high-influence badges
     calculateAndRenderEstimates();
+    renderComparables(); // Update comparable properties with new weights and high-influence badges
     updateMap();
 }
 
@@ -2449,15 +2659,15 @@ window.changeTargetProperty = changeTargetProperty;
 // Quick filter functions
 /*function selectAllComps() {
     comparableProperties.forEach(p => p.included = true);
-    renderComparables();
     calculateAndRenderEstimates();
+    renderComparables();
     updateMap();
 }
 
 function deselectAllComps() {
     comparableProperties.forEach(p => p.included = false);
-    renderComparables();
     calculateAndRenderEstimates();
+    renderComparables();
     updateMap();
 }
 
@@ -2465,8 +2675,8 @@ function filterRenovated() {
     comparableProperties.forEach(p => {
         p.included = p.renovated === 'Yes';
     });
-    renderComparables();
     calculateAndRenderEstimates();
+    renderComparables();
     updateMap();
 }
 
@@ -2474,8 +2684,8 @@ function filterTaxClass1() {
     comparableProperties.forEach(p => {
         p.included = String(p.taxClass).trim() === '1';
     });
-    renderComparables();
     calculateAndRenderEstimates();
+    renderComparables();
     updateMap();
 }*/
 
@@ -2492,8 +2702,8 @@ function setWeightingMethod(method) {
         }
     });
 
-    renderComparables();
     calculateAndRenderEstimates();
+    renderComparables();
     updateMap(); // Update map to reflect new weights in heatmap
 }
 

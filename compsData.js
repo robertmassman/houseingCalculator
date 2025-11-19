@@ -6,7 +6,7 @@ export const comparableProperties = [
         originalDetails: "Partial",
         propertyWidthFeet: 16,
         propertyDepthFeet: 72.5,
-        floors: 5,
+        floors: 4, //5,
         buildingWidthFeet: 16,
         buildingDepthFeet: 40,
         //buildingStories: 3,
@@ -19,6 +19,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 4325.64,
         coordinates: { lat: 40.6763342, lng: -73.9445379 },
+        distanceToTransit: 0.4674,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.5917,  // miles to Franklin & Dean Commercial
     },
     {
         address: "843 Prospect Pl, Brooklyn, NY 11216",
@@ -26,7 +28,7 @@ export const comparableProperties = [
         originalDetails: "Partial",
         propertyWidthFeet: 18.75,
         propertyDepthFeet: 91,
-        floors: 5,
+        floors: 4,
         buildingWidthFeet: 18.75,
         buildingDepthFeet: 50,
         //buildingStories: 3,
@@ -39,6 +41,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 8706.20,
         coordinates: { lat: 40.6744052, lng: -73.9485151 },
+        distanceToTransit: 0.3715,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.4343,  // miles to Franklin & Dean Commercial
     },
     {
         address: "674 Saint Marks Ave, Brooklyn, NY 11216",
@@ -59,6 +63,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 14883.94,
         coordinates: { lat: 40.6750718, lng: -73.9512585 },
+        distanceToTransit: 0.2596,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.2882,  // miles to Franklin & Dean Commercial
     },
     {
         address: "1323 Dean St, Brooklyn, NY 11216",
@@ -79,6 +85,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 4794.84,
         coordinates: { lat: 40.6768241, lng: -73.9450772 },
+        distanceToTransit: 0.4300,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.5598,  // miles to Franklin & Dean Commercial
     },
     {
         address: "854 Prospect Place, Brooklyn, NY 11216",
@@ -86,7 +94,7 @@ export const comparableProperties = [
         originalDetails: "N/A",
         propertyWidthFeet: 20,
         propertyDepthFeet: 140.58,
-        floors: 5,
+        floors: 4,
         buildingWidthFeet: 20,
         buildingDepthFeet: 45,
         //buildingStories: 3,
@@ -99,6 +107,8 @@ export const comparableProperties = [
         taxClass: "2A",
         taxes: 15031.78,
         coordinates: { lat: 40.674060, lng: -73.948438 },
+        distanceToTransit: 0.3928,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.4500,  // miles to Franklin & Dean Commercial
     },
     {
         address: "845 Prospect Place, Brooklyn, NY 11216",
@@ -106,7 +116,7 @@ export const comparableProperties = [
         originalDetails: "Yes",
         propertyWidthFeet: 18.75,
         propertyDepthFeet: 91,
-        floors: 5,
+        floors: 4,
         buildingWidthFeet: 18.75,
         buildingDepthFeet: 50,
         //  buildingStories: 3,
@@ -119,6 +129,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 6847.34,
         coordinates: { lat: 40.674399, lng: -73.948497 },
+        distanceToTransit: 0.3724,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.4353,  // miles to Franklin & Dean Commercial
     },
     {
         address: "1113 Bergen St, Brooklyn, NY 11216",
@@ -139,6 +151,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 5618.26,
         coordinates: { lat: 40.67623, lng: -73.9488728 },
+        distanceToTransit: 0.2690,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.3697,  // miles to Franklin & Dean Commercial
     },
     {
         address: "1219 Dean St, Brooklyn, NY 11216",
@@ -159,6 +173,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 6785.30,
         coordinates: { lat: 40.6770163, lng: -73.9488718 },
+        distanceToTransit: 0.2398,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.3606,  // miles to Franklin & Dean Commercial
     },
     {
         address: "1290 Pacific St, Brooklyn, NY 11216",
@@ -166,7 +182,7 @@ export const comparableProperties = [
         originalDetails: "Yes",
         propertyWidthFeet: 50,
         propertyDepthFeet: 114,
-        floors: 5,
+        floors: 4,
         buildingWidthFeet: 30,
         buildingDepthFeet: 45,
         //buildingStories: 3,
@@ -179,6 +195,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 4632.36,
         coordinates: { lat: 40.677353, lng: -73.948390 },
+        distanceToTransit: 0.2536,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.3844,  // miles to Franklin & Dean Commercial
     },
     {
         address: "1354 Pacific St, Brooklyn, NY 11216",
@@ -199,6 +217,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 5052.76,
         coordinates: { lat: 40.677247, lng: -73.945587 },
+        distanceToTransit: 0.3965,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.5314,  // miles to Franklin & Dean Commercial
     },
     {
         address: "1352 Pacific St, Brooklyn, NY 11216",
@@ -206,7 +226,7 @@ export const comparableProperties = [
         originalDetails: "No",
         propertyWidthFeet: 20,
         propertyDepthFeet: 100,
-        floors: 5,
+        floors: 4.5,
         buildingWidthFeet: 20,
         buildingDepthFeet: 50,
         //buildingStories: 3,
@@ -219,6 +239,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 4991.34,
         coordinates: { lat: 40.677253, lng: -73.945649 },
+        distanceToTransit: 0.3933,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.5282,  // miles to Franklin & Dean Commercial
     },
     {
         address: "1306 Dean St, Brooklyn, NY 11216",
@@ -226,7 +248,7 @@ export const comparableProperties = [
         originalDetails: "Yes",
         propertyWidthFeet: 20,
         propertyDepthFeet: 114.42,
-        floors: 5,
+        floors: 4,
         buildingWidthFeet: 20,
         buildingDepthFeet: 50,
         //buildingStories: 3,
@@ -239,6 +261,8 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 9055.52,
         coordinates: { lat: 40.676466, lng: -73.945769 },
+        distanceToTransit: 0.4038,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.5265,  // miles to Franklin & Dean Commercial
     },
     {
         address: "1106 Bergen St, Brooklyn, NY 11216",
@@ -249,7 +273,6 @@ export const comparableProperties = [
         floors: 5,
         buildingWidthFeet: 20,
         buildingDepthFeet: 45,
-        //buildingStories: 3,
         priceOnZillow: 1890000.00,
         priceOnACRIS: 1890000.00,
         sellDate: "N/A",
@@ -259,7 +282,30 @@ export const comparableProperties = [
         taxClass: "1",
         taxes: 6003.36,
         coordinates: { lat: 40.675890, lng: -73.949232 },
+        distanceToTransit: 0.2701,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.3580,  // miles to Franklin & Dean Commercial
     },
+    {
+        address: "1176 Dean St, Brooklyn, NY 11216",
+        renovated: "No",
+        originalDetails: "Partial",
+        propertyWidthFeet: 20,
+        propertyDepthFeet: 107.17,
+        floors: 4,
+        buildingWidthFeet: 20,
+        buildingDepthFeet: 54,
+        priceOnZillow: 1800000.00,
+        priceOnACRIS: 1800000.00,
+        sellDate: "7/10/2017",
+        block: 1212,
+        lot: 34,
+        occupancy: "C3 - FOUR FAMILIES",
+        taxClass: "2A",
+        taxes: 11567.60,
+        coordinates: { lat: 40.676759, lng: -73.950635 },
+        distanceToTransit: 0.1757,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.2716,  // miles to Franklin & Dean Commercial
+    }
     /*{
         address: "",
         renovated: "",
@@ -269,15 +315,16 @@ export const comparableProperties = [
         floors: 0,
         buildingWidthFeet: 0,
         buildingDepthFeet: 0,
-        buildingStories: 0,
-        priceOnZillow: 0.00,
-        priceOnACRIS: 0.00,
-        sellDate: "",
+        priceOnZillow: 0,
+        priceOnACRIS: 0,
+        sellDate: "N/A",
         block: 0,
         lot: 0,
         occupancy: "",
         taxClass: "",
-        taxes: 0.00,
-        coordinates: { lat: 0, lng: -0 },
+        taxes: 0,
+        coordinates: { lat: 0, lng: 0 },
+        distanceToTransit: 0,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0,  // miles to Franklin & Dean Commercial
     }*/
 ];

@@ -80,12 +80,7 @@
 
         <!-- Comparable Properties -->
         <h2>Comparable Properties</h2>
-        <div class="quick-filters">
-            <button onclick="selectAllComps()">Select All</button>
-            <button onclick="deselectAllComps()">Deselect All</button>
-            <button onclick="filterRenovated()">Only Renovated</button>
-            <button onclick="filterTaxClass1()">Only Tax Class 1</button>
-        </div>
+
         <div class="comps-table-wrapper">
             <table id="comps-table">
                 <thead>
@@ -99,7 +94,7 @@
                         <th>Building<br> SQFT</th>
                         <th title="Price per square foot (building basis). Hover for total property $/SQFT">$/SQFT</th>
                         <th>Sale Price</th>
-                        <th class="adjustment-header" title="CMA adjustment factor applied to comparable based on differences from target (size, renovation, lot, width, details)">Adjustment</th>
+                        <th class="adjustment-header" title="CMA adjustment factor applied to comparable based on differences from target (size, renovation, lot, width, details). Shows true percentage difference between comp and target.">Adjustment</th>
                         <th id="weight-header">Weight %</th>
                         <th class="similarity-header" title="Similarity score: lower is better. Combines adjustment, size, lot, width, date, and characteristic differences. < 10 = Excellent, < 20 = Good, < 35 = Fair">Similarity</th>
                     </tr>

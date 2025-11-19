@@ -498,9 +498,6 @@ tr.outlier {
     margin-right: 5px;
 }
 
-    border-left: 3px solid #9b59b6;
-}
-
 tr.high-influence:hover {
     background: #e1bee7 !important;
 }

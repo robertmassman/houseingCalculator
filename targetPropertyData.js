@@ -20,9 +20,11 @@ export const targetProperty = [
         taxClass: "2A",
         taxes: 16894.10,
         coordinates: { lat: 40.6766196, lng: -73.9489274 },
+        distanceToTransit: 0.2510,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.3613,  // miles to Franklin & Dean Commercial
         referenceValues: {
             developerPrice: 3250000.00,
-            fairMarketValue: 2500000.00
+            fairMarketValue: null,
         }
     },
     {
@@ -45,6 +47,8 @@ export const targetProperty = [
         taxClass: "1",
         taxes: 4789.68,
         coordinates: { lat: 40.673169, lng: -73.948462 },
+        distanceToTransit: 0.4429,  // miles to Nostrand Ave A/C Station
+        distanceToCommercial: 0.4844,  // miles to Franklin & Dean Commercial
     }
 ];
 
